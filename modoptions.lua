@@ -1213,6 +1213,16 @@ local options = {
         section = "options_experimental",
         hidden 	= true,
     },
+    
+    {
+        key 	= "unbacom",
+        name 	= "Unbalanced Commanders",
+        desc 	= "Commanders level up every 4 minutes with unique (and unbalanced) abilities for each faction.",
+        type 	= "bool",
+        def 	= false,
+        section = "options_experimental",
+        hidden 	= false,
+    },
 
     ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
