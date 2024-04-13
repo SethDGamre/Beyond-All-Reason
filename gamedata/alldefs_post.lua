@@ -240,7 +240,7 @@ function UnitDef_Post(name, uDef)
 				uDef.maxthisunit = 0
 			end
 		end
-		
+
 		if modOptions.unit_restrictions_noextractors then
 			if (uDef.extractsmetal and uDef.extractsmetal > 0) and (uDef.customparams.metal_extractor and uDef.customparams.metal_extractor > 0) then
 				uDef.maxthisunit = 0
@@ -319,7 +319,7 @@ function UnitDef_Post(name, uDef)
 			end
 		end
 	end
-	
+
 	-- Release candidate units
 	if modOptions.releasecandidates then
 
@@ -779,39 +779,6 @@ function UnitDef_Post(name, uDef)
 		end
 	end
 
-	if modOptions.unbacom == true then
-		if name == "armcom" then
-			uDef.customparams.evolution_announcement = "Armada commanders have upgraded to level 2"
-			uDef.customparams.evolution_announcement_size = 18.5
-			uDef.customparams.evolution_target = "armcomlvl2"
-			uDef.customparams.evolution_condition = "timer"
-			uDef.customparams.evolution_timer = 240
-		end
-		if name == "corcom" then
-			uDef.customparams.evolution_announcement = "Cortex commanders have upgraded to level 2"
-			uDef.customparams.evolution_announcement_size = 18.5
-			uDef.customparams.evolution_target = "corcomlvl2"
-			uDef.customparams.evolution_condition = "timer"
-			uDef.customparams.evolution_timer = 240
-		end
-		if name == "legcom" then
-			uDef.customparams.evolution_timer = 240
-		end
-		if name == "legcomlvl2" then
-			uDef.customparams.evolution_timer = 240
-		end
-		if name == "legcomlvl3" then
-			uDef.customparams.evolution_timer = 240
-		end
-		if name == "legcomlvl4" then
-			uDef.customparams.evolution_announcement = "Legion commanders have upgraded to level 5"
-			uDef.customparams.evolution_announcement_size = 18.5
-			uDef.customparams.evolution_target = "legcomlvl5"
-			uDef.customparams.evolution_condition = "timer"
-			uDef.customparams.evolution_timer = 240
-		end
-
-	end
 	--Lategame Rebalance
 	if modOptions.lategame_rebalance == true then
 		if name == "armamb" then
@@ -1146,7 +1113,6 @@ function UnitDef_Post(name, uDef)
 	uDef.customparams.healthlookmod = 0
 end
 
-
 local function ProcessSoundDefaults(wd)
 	local forceSetVolume = not wd.soundstartvolume or not wd.soundhitvolume or not wd.soundhitwetvolume
 	if not forceSetVolume then
@@ -1295,7 +1261,6 @@ function WeaponDef_Post(name, wDef)
 				end
 			end
 		end
-		
 		----------------------------------------
 
 		--Use targetborderoverride in weapondef customparams to override this global setting
@@ -1447,24 +1412,23 @@ end
 -------------------------
 
 -- process modoptions (last, because they should not get baked)
-	function ModOptions_Post (UnitDefs, WeaponDefs)
+function ModOptions_Post (UnitDefs, WeaponDefs)
 
-		-- transporting enemy coms
-		if Spring.GetModOptions().transportenemy == "notcoms" then
-			for name, ud in pairs(UnitDefs) do
-				if ud.customparams.iscommander then
-					ud.transportbyenemy = false
-				end
-			end
-		elseif Spring.GetModOptions().transportenemy == "none" then
-			for name, ud in pairs(UnitDefs) do
+	-- transporting enemy coms
+	if Spring.GetModOptions().transportenemy == "notcoms" then
+		for name, ud in pairs(UnitDefs) do
+			if ud.customparams.iscommander then
 				ud.transportbyenemy = false
 			end
 		end
-
-		-- For Decals GL4, disables default groundscars for explosions
-		for _, wDef in pairs(WeaponDefs) do
-			wDef.explosionScar = false
+	elseif Spring.GetModOptions().transportenemy == "none" then
+		for name, ud in pairs(UnitDefs) do
+			ud.transportbyenemy = false
 		end
-end
+	end
 
+	-- For Decals GL4, disables default groundscars for explosions
+	for _, wDef in pairs(WeaponDefs) do
+		wDef.explosionScar = false
+	end
+end
