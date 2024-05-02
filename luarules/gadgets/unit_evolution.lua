@@ -95,7 +95,60 @@ if gadgetHandler:IsSyncedCode() then
 
 		-- },
 
-
+    function ReturnToBase(unitID)
+		local x,y,z = spGetUnitPosition(unitID) -- usefull if you want to spawn explosions or other effects where you were.
+		local team = spGetUnitTeam(unitID)
+		local ox, oy, oz = Spring.GetTeamStartPosition(team)
+		--local ox oy, oz = Spring.GetNearestLab
+		--gy = Spring.GetGroundHeight(ox, oz)
+		--Spring.GetUnitsInCylinder(ox, oy, oz, 200)
+		Spring.Echo("ReturnToBase 1")
+		local blockType, blockID = Spring.GetGroundBlocked(ox, oz)
+		local groundH = Spring.GetGroundHeight(ox, oz)
+		
+		if blockType then 
+			Spring.Echo("ReturnToBase 2")
+		    if blockType == "unit" then
+				Spring.Echo("ReturnToBase 3")
+		        Spring.SetUnitPosition(blockID, x, z, true)
+		        Spring.SetUnitPosition(unitID, ox, oz, true)
+		        Spring.SpawnCEG("commander-spawn", ox, oy, oz, 0, 0, 0)
+		        
+		    elseif blockType == "feature" then
+				Spring.Echo("ReturnToBase 4")
+	            Spring.DestroyFeature(blockID)
+	            Spring.SetUnitPosition(unitID, ox, oz, true)
+	            Spring.SpawnCEG("commander-spawn", ox, oy, oz, 0, 0, 0)
+		    end
+		    
+	        
+		elseif groundH < oy then
+		    local spawnZoneUnitTable = Spring.GetUnitsInCylinder(ox, oy, oz, 1000)
+			Spring.Echo("ReturnToBase 5")
+		    if spawnZoneUnitTable then
+				Spring.Echo("ReturnToBase 6")
+		        Spring.SetUnitPosition(spawnZoneUnitTable[1], x, z, true)
+		        Spring.SetUnitPosition(unitID, ox, oz, true)
+		        Spring.SpawnCEG("commander-spawn", ox, oy, oz, 0, 0, 0)
+		    end
+	        
+		    
+		else
+			Spring.Echo("ReturnToBase 6")    
+		    
+		end
+		
+		Spring.SpawnCEG("commander-spawn", x, y, z, 0, 0, 0)
+		
+		Spring.SetUnitPosition(unitID, ox, oz, true)
+		--local health = spGetUnitHealth(unitID)
+		--local health2 = health + health
+		spSetUnitHealth(unitID, {health = 10, capture = 0, paralyze = 0, build = 0})
+		
+    
+    end
+    
+    
 	function Evolve(unitID, newUnit)
 		local x,y,z = spGetUnitPosition(unitID)
 		if not z then
@@ -153,7 +206,9 @@ if gadgetHandler:IsSyncedCode() then
 			evolutionMetaList[unitID] = {
 				evolution_target = udcp.evolution_target,
 				evolution_condition = udcp.evolution_condition or "timer",
+				respawn_condition = udcp.respawn_condition or "none",
 				evolution_timer = tonumber(udcp.evolution_timer) or 600,
+				respawn_health_threshold = tonumber(udcp.respawn_health_threshold) or 600,
 				evolution_announcement = udcp.evolution_announcement,
 				evolution_announcement_size = tonumber(udcp.evolution_announcement_size),
 				combatRadius = tonumber(udcp.combatradius) or 1000,
@@ -161,6 +216,7 @@ if gadgetHandler:IsSyncedCode() then
 
 				timeCreated = spGetGameSeconds(),
 				combatTimer = spGetGameSeconds(),
+				respawnTimer = spGetGameSeconds(),
 				inCombat = false,
 			}
 		end
@@ -177,7 +233,24 @@ if gadgetHandler:IsSyncedCode() then
 			evolutionMetaList[unitID] = nil
 		end
 	end
+	
+	function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
+		if evolutionMetaList[unitID] then
+			if evolutionMetaList[unitID].respawn_condition == "health" then
+				local h, mh = spGetUnitHealth(unitID)
+				local currentTime =  spGetGameSeconds()
 
+				if (h-damage) <= evolutionMetaList[unitID].respawn_health_threshold and (currentTime-evolutionMetaList[unitID].respawnTimer) >= 60 then
+					Spring.Echo("UnitPreDamaged 1")
+						ReturnToBase(unitID)
+						Spring.Echo("UnitPreDamaged 2")
+						evolutionMetaList[unitID].respawnTimer = spGetGameSeconds()
+						Spring.Echo("UnitPreDamaged 3")
+				end
+			end
+		end
+	end
+	
 
 	function gadget:GameFrame(f)
 		if f % GAME_SPEED ~= 0 then
@@ -199,6 +272,8 @@ if gadgetHandler:IsSyncedCode() then
 						Evolve(unitID, evolutionMetaList[unitID].evolution_target)
 					end
 				end
+				
+				
 			end
 		end
 	end

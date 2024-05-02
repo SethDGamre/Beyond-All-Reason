@@ -109,6 +109,8 @@ return {
 			evolution_target = "armcomlvl3",
 			evolution_condition = "timer",
 			evolution_timer = 99999,
+			respawn_condition = "health",
+			respawn_health_threshold = 1000,
 		},
 		featuredefs = {
 			dead = {
