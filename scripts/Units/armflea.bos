@@ -5,7 +5,7 @@
 
 piece  base, turret, flare, rrleg, rfleg, lrleg, lfleg, aimy1;
 
-static-var  bMoving, bAiming, Static_Var_3, restore_delay, wpn1_lasthead;
+static-var  bMoving, bAiming, Static_Var_3, restore_delay, wpn1_lasthead, delayFire;
 #define SIG_AIM 2
 
 // Signal definitions
@@ -141,6 +141,12 @@ StopMoving(){
 
 #include "unit_hitbyweaponid_and_smoke.h"
 
+DelayFire()
+{
+	sleep 1500;
+	delayFire = 1;
+}
+
 Create()
 {
 	hide flare;
@@ -173,6 +179,7 @@ ExecuteRestoreAfterDelay()
 	wait-for-turn aimy1 around y-axis;
 	wpn1_lasthead = 1000000;
 	bAiming = FALSE;
+	delayFire = 0;
 }
 SetStunned(State)
 {
@@ -213,6 +220,10 @@ AimPrimary(heading, pitch)
 		wait-for-turn aimy1 around y-axis;
 	}
 	wpn1_lasthead = heading;
+	if (!delayFire)
+	{
+		call-script DelayFire();
+	}
 	start-script RestoreAfterDelay();
 	return (1);
 }
