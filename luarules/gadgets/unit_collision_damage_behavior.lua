@@ -133,9 +133,13 @@ end
 function gadget:UnitPreDamaged(unitID, unitDefID, unitTeam, damage, paralyzer, weaponDefID, projectileID, attackerID, attackerDefID, attackerTeam)
 	if not weaponDefIgnored[weaponDefID] and weaponDefID >= 0 then --this section handles limiting maximum impulse
 		local impulseMultiplier = 1
-		impulseMultiplier = getImpulseMultiplier(unitDefID, weaponDefID, damage)
-		unitInertiaCheckFlags[unitID] = gameFrame + velocityWatchFrames
-		return damage, impulseMultiplier
+		if weaponDefID >= 0 then
+			impulseMultiplier = getImpulseMultiplier(unitDefID, weaponDefID, damage)
+			unitInertiaCheckFlags[unitID] = gameFrame + velocityWatchFrames
+			return damage, impulseMultiplier
+		else
+			return damage, 0
+		end
 	elseif (weaponDefID == groundCollisionDefID or weaponDefID == objectCollisionDefID) and not transportedUnits[unitID] and isValidCollisionDirection(unitID) then
 		local healthRatioMultiplier, health = massToHealthRatioMultiplier(unitID, unitDefID)
 		damage = preventOverkillDamage(unitID, damage, health, healthRatioMultiplier)
