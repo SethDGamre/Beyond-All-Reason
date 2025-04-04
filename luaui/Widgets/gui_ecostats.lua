@@ -1,6 +1,9 @@
-if #Spring.GetAllyTeamList()-1 > 16 then
-	return
-end
+
+--if #Spring.GetAllyTeamList()-1 > 16 then
+--	return
+--end
+
+local widget = widget ---@type Widget
 
 function widget:GetInfo()
 	return {
@@ -338,7 +341,7 @@ local function checkCommanderAlive(teamID)
 end
 
 local function setTeamTable(teamID)
-	local commanderAlive, minc, mrecl, einc, erecl, x, y
+	local minc, mrecl, einc, erecl
 	local _, leaderID, isDead, isAI, aID = GetTeamInfo(teamID, false)
 	local leaderName, active, spectator = GetPlayerInfo(leaderID, false)
 	if teamID == gaiaID then
@@ -356,8 +359,6 @@ local function setTeamTable(teamID)
 	_, _, _, minc = GetTeamResources(teamID, "metal")
 	_, _, _, einc = GetTeamResources(teamID, "energy")
 	erecl, mrecl = getTeamReclaim(teamID)
-	x, _, y = Spring.GetTeamStartPosition(teamID)
-	commanderAlive = checkCommanderAlive(teamID)
 
 	if not teamData[teamID] then
 		teamData[teamID] = {}
@@ -368,10 +369,13 @@ local function setTeamTable(teamID)
 	teamData[teamID].red = tred
 	teamData[teamID].green = tgreen
 	teamData[teamID].blue = tblue
-	teamData[teamID].startx = x
-	teamData[teamID].starty = y
+	if not teamData[teamID].startx then
+		local x, _, y = Spring.GetTeamStartPosition(teamID)
+		teamData[teamID].startx = x
+		teamData[teamID].starty = y
+	end
 	teamData[teamID].isDead = teamData[teamID].isDead or isDead
-	teamData[teamID].hasCom = commanderAlive
+	teamData[teamID].hasCom = checkCommanderAlive(teamID)
 	teamData[teamID].minc = minc
 	teamData[teamID].mrecl = mrecl
 	teamData[teamID].einc = einc
@@ -576,23 +580,22 @@ function widget:Shutdown()
 	if uiBgTex then
 		gl.DeleteTextureFBO(uiBgTex)
 	end
+	if uiTex then
+		gl.DeleteTextureFBO(uiTex)
+	end
 	WG['ecostats'] = nil
 end
 
 local areaRect = {}
 local prevAreaRect = {}
-local function createTeamCompositionList()
-	refreshTeamCompositionList = true
-end
 local function makeTeamCompositionList()
 	if not inSpecMode then
 		return
 	end
-	if teamCompositionList then
-		gl.DeleteList(teamCompositionList)
-	end
-	teamCompositionList = gl.CreateList(DrawTeamComposition)
 	if useRenderToTexture then
+		if #uiElementRects == 0 then
+			DrawTeamComposition()	-- need to run once so uiElementRects gets filled
+		end
 		areaRect = {}
 		for id, rect in pairs(uiElementRects) do
 			if not areaRect[1] then
@@ -627,6 +630,14 @@ local function makeTeamCompositionList()
 				format = GL.ALPHA,
 				fbo = true,
 			})
+			if uiTex then
+				gl.DeleteTextureFBO(uiTex)
+			end
+			uiTex = gl.CreateTexture(math.floor(areaRect[3]-areaRect[1]), math.floor(areaRect[4]-areaRect[2]), {
+				target = GL.TEXTURE_2D,
+				format = GL.ALPHA,
+				fbo = true,
+			})
 		end
 		if uiBgTex then
 			gl.RenderToTexture(uiBgTex, function()
@@ -642,6 +653,23 @@ local function makeTeamCompositionList()
 				gl.PopMatrix()
 			end)
 		end
+		if uiTex then
+			gl.RenderToTexture(uiTex, function()
+				gl.Clear(GL.COLOR_BUFFER_BIT, 0, 0, 0, 0)
+				gl.Color(1,1,1,1)
+				gl.PushMatrix()
+				gl.Translate(-1, -1, 0)
+				gl.Scale(2 / (areaRect[3]-areaRect[1]), 2 / (areaRect[4]-areaRect[2]),	0)
+				gl.Translate(-areaRect[1], -areaRect[2], 0)
+				DrawTeamComposition()
+				gl.PopMatrix()
+			end)
+		end
+	else
+		if teamCompositionList then
+			gl.DeleteList(teamCompositionList)
+		end
+		teamCompositionList = gl.CreateList(DrawTeamComposition)
 	end
 	if WG['guishader'] then
 		for id, rect in pairs(guishaderRects) do
@@ -699,11 +727,13 @@ local function Reinit()
 		end
 	end
 
+	uiElementRects = {}
+
 	processScaling()
 	UpdateAllTeams()
 	UpdateAllies()
 	updateButtons()
-	createTeamCompositionList()
+	refreshTeamCompositionList = true
 end
 
 function widget:GetConfigData(data)
@@ -1195,7 +1225,7 @@ function widget:PlayerChanged(playerID)
 	if myFullview and not singleTeams and WG['playercolorpalette'] ~= nil and WG['playercolorpalette'].getSameTeamColors() then
 		if myTeamID ~= Spring.GetMyTeamID() then
 			UpdateAllTeams()
-			createTeamCompositionList()
+			refreshTeamCompositionList = true
 		end
 	end
 	myFullview = select(2, Spring.GetSpectatingState())
@@ -1338,27 +1368,38 @@ function widget:ViewResize()
 	Reinit()
 end
 
-function widget:GameFrame(frameNum)
+
+local sec = 0
+local sec1 = 0
+local sec2 = 0
+function widget:Update(dt)
 	if not inSpecMode or not myFullview then
 		return
 	end
-
-	if frameNum == 15 then
-		UpdateAllTeams()
+	
+	local gf = Spring.GetGameFrame()
+	if not gamestarted and gf > 0 then
+		gamestarted = true
 	end
-
-	if frameNum - lastPlayerChange == 40 then
+	if gf - lastPlayerChange == 40 then
+		lastPlayerChange = lastPlayerChange - 1	-- prevent repeat execution cause this is in widget:Update
 		-- check for dead teams
 		for teamID in pairs(teamData) do
 			teamData[teamID].isDead = select(3, GetTeamInfo(teamID, false))
 		end
 		UpdateAllies()
-		createTeamCompositionList()
-	elseif frameNum % 80 == 5 then
-		createTeamCompositionList()
+		refreshTeamCompositionList = true
 	end
 
-	if frameNum % 10 == 1 then
+	sec1 = sec1 + dt
+	if sec1 > 0.5 then
+		sec1 = 0
+		UpdateAllTeams()
+	end
+
+	sec2 = sec2 + dt
+	if sec2 > 0.3 then
+		sec2 = 0
 		-- set/update player resources
 		for teamID, data in pairs(teamData) do
 			data.minc = select(4, GetTeamResources(teamID, "metal")) or 0
@@ -1369,51 +1410,55 @@ function widget:GameFrame(frameNum)
 		UpdateAllies()
 	end
 
-	if not gamestarted and frameNum > 0 then
-		gamestarted = true
-	end
-end
-
-local sec = 0
-function widget:Update(dt)
 	sec = sec + dt
-	if sec > 5 then
+	if sec > 3 then
 		sec = 0
 		if WG.allyTeamRanking then
 			updateDrawPos()
 		end
+		refreshTeamCompositionList = true
 	end
 
 	local prevTopbarShowButtons = topbarShowButtons
-	topbarShowButtons =  WG['topbar'] and WG['topbar'].getShowButtons()
-	if topbarShowButtons ~= prevTopbarShowButtons then
+	topbarShowButtons = WG['topbar'] and WG['topbar'].getShowButtons()
+	if topbarShowButtons ~= prevTopbarShowButtons or not prevTopbar and (WG['topbar'] ~= nil) or prevTopbar ~= (WG['topbar'] ~= nil) then
 		Reinit()
 		lastTextListUpdate = 0
 	end
+	prevTopbar = WG['topbar'] ~= nil and true or false
 end
 
 function widget:DrawScreen()
 	if not myFullview or not inSpecMode then
 		return
 	end
-
-	if not teamCompositionList or refreshTeamCompositionList then
+	
+	if aliveAllyTeams > 16 then
+		return
+	end
+	
+	if refreshTeamCompositionList then
 		refreshTeamCompositionList = false
 		makeTeamCompositionList()
 	end
 
-	if useRenderToTexture then
+	if useRenderToTexture and uiBgTex then
 		-- background element
 		gl.Color(1,1,1,Spring.GetConfigFloat("ui_opacity", 0.7)*1.1)
 		gl.Texture(uiBgTex)
 		gl.TexRect(areaRect[1], areaRect[2], areaRect[3], areaRect[4], false, true)
-		gl.Texture(false)
+		-- content
 		gl.Color(1,1,1,1)
+		gl.Texture(uiTex)
+		gl.TexRect(areaRect[1], areaRect[2], areaRect[3], areaRect[4], false, true)
+		gl.Texture(false)
 	end
 
 	gl.PolygonOffset(-7, -10)
 	gl.PushMatrix()
-	gl.CallList(teamCompositionList)
+	if not useRenderToTexture then
+		gl.CallList(teamCompositionList)
+	end
 	drawListStandard()
 	gl.PopMatrix()
 
