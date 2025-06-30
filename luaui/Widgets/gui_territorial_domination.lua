@@ -6,10 +6,10 @@ function widget:GetInfo()
 		date      = "2025",
 		license   = "GNU GPL, v2",
 		layer     = -9,
-		enabled   = true,
+		enabled   = false,
 	}
 end
-
+if 1 == 1 then return false end
 local modOptions = Spring.GetModOptions()
 if (modOptions.deathmode ~= "territorial_domination" and not modOptions.temp_enable_territorial_domination) then return false end
 

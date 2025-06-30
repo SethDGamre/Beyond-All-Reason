@@ -1,0 +1,16 @@
+<rml>
+<head>
+	<link type="text/rcss" href="territorial_domination.rcss"/>
+</head>
+<body>
+	<div id="territorial-domination" class="territorial-domination-container">
+		<div id="score-bars-container" class="score-bars-container">
+			<!-- Score bars will be dynamically generated here -->
+		</div>
+		
+		<div id="warning-message" class="warning-message">
+			<!-- Warning messages will be dynamically generated here -->
+		</div>
+	</div>
+</body>
+</rml> 
