@@ -157,6 +157,9 @@ return {
 				weapontimer = 2,
 				weapontype = "MissileLauncher",
 				weaponvelocity = 1000,
+				customparams = {
+					noattackrangearc = 1,
+				},
 				damage = {
 					commanders = 1,
 					vtol = 150,
@@ -190,6 +193,9 @@ return {
 				weapontimer = 1,
 				weapontype = "Cannon",
 				weaponvelocity = 1550,
+				customparams = {
+					noattackrangearc = 1,
+				},
 				damage = {
 					vtol = 250,
 				},
@@ -224,6 +230,9 @@ return {
 				turret = true,
 				weapontype = "Cannon",
 				weaponvelocity = 600,
+				customparams = {
+					noattackrangearc = 1,
+				},
 				damage = {
 					default = 437,
 					vtol = 200,
@@ -251,6 +260,9 @@ return {
 				turret = true,
 				weapontype = "Cannon",
 				weaponvelocity = 570,
+				customparams = {
+					noattackrangearc = 1,
+				},
 				damage = {
 					default = 270,
 					vtol = 65,

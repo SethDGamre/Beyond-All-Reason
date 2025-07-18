@@ -8,7 +8,6 @@ function widget:GetInfo()
 		version = "2.0",
 		date = "Oct 23, 2010; last update: April 12, 2022",
 		license = "GNU GPL, v2 or later",
-		handler = true,
 		layer = -1, -- load before all widgets that need these mex/geo building tools
 		enabled = true
 	}
@@ -17,13 +16,7 @@ end
 ------------------------------------------------------------
 -- Speedups
 ------------------------------------------------------------
-local CMD_STOP = CMD.STOP
 local CMD_GUARD = CMD.GUARD
-local CMD_OPT_RIGHT = CMD.OPT_RIGHT
-local CMD_OPT_ALT = CMD.OPT_ALT
-local CMD_OPT_CTRL = CMD.OPT_CTRL
-local CMD_OPT_META = CMD.OPT_META
-local CMD_OPT_SHIFT = CMD.OPT_SHIFT
 
 local spGetBuildFacing = Spring.GetBuildFacing
 local spGetSelectedUnits = Spring.GetSelectedUnits

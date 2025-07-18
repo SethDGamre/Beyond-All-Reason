@@ -160,12 +160,11 @@ return {
 				range = 900,
 				reloadtime = 4,
 				rgbcolor = "1 0.55 0",
-				rgbcolor2 = "0.9 1.0 0.5",
+				rgbcolor2 = "0.95 1.0 0.7",
 				soundhitdry = "",
 				soundhitwet = "sizzle",
 				soundstart = "heatray2",
 				soundtrigger = 1,
-				targetmoveerror = 0,
 				thickness = 6,
 				tolerance = 10000,
 				turret = true,
@@ -215,12 +214,12 @@ return {
 				weapontimer = 1,
 				weapontype = "StarburstLauncher",
 				weaponvelocity = 2600,
+				customparams = {
+					overrange_distance = 1093,
+					projectile_destruction_method = "descend",
+				},
 				damage = {
 					default = 800,
-				},
-				customparams = {
-					projectile_destruction_method = "descend",
-					overrange_distance = 1093,
 				},
 			},
 			krogfootstep = {
@@ -245,6 +244,7 @@ return {
 				soundhitwetvolume = 16,
 				weapontype = "Cannon",
 				customparams = {
+					bogus = 1,
 					nodecal = true,
 					noexplosionlight = 1,
 				},
@@ -280,7 +280,8 @@ return {
 				weapontype = "Cannon",
 				weaponvelocity = 1650,
 				customparams = {
-					lups_noshockwave = true,
+					bogus = 1,
+					noattackrangearc = 1,
 					nofire = true,
 				},
 				damage = {
@@ -296,6 +297,7 @@ return {
 				soundhitdryvolume = 16,
 				weapontype = "Cannon",
 				customparams = {
+					bogus = 1,
 					noexplosionlight = 1,
 				},
 				damage = {
@@ -311,6 +313,7 @@ return {
 				soundhitdryvolume = 16,
 				weapontype = "Cannon",
 				customparams = {
+					bogus = 1,
 					noexplosionlight = 1,
 				},
 				damage = {

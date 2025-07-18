@@ -43,7 +43,7 @@ return {
 			normaltex = "unittextures/leg_normal.dds",
 			subfolder = "Legion/Air/T2 Air",
 			techlevel = 2,
-			fighter = 1,
+			attacksafetydistance = 300,
 		},
 		sfxtypes = {
 			crashexplosiongenerators = {
@@ -110,6 +110,9 @@ return {
 					commanders = 8,
 					default = 24,
 					vtol = 480,
+				},
+				customparams = {
+					noattackrangearc= 1,
 				},
 			},
 		},
