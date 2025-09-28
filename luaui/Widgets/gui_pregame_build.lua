@@ -51,25 +51,134 @@ local function snapBuildPosition(unitDefID, worldX, worldY, worldZ, buildFacing)
 	return snappedX, snappedY, snappedZ
 end
 
+
 local function getBuildingCenterStep(unitDefID, buildFacing)
+	local SQUARE_SIZE = 8
+	local buildSpacing = Spring.GetBuildSpacing() or 0
+	
 	local def = UnitDefs[unitDefID]
 	local footprintWidth
 	local footprintHeight
 	if buildFacing % 2 == 1 then
-		footprintWidth = 4 * def.zsize
-		footprintHeight = 4 * def.xsize
+		footprintWidth = SQUARE_SIZE * def.zsize
+		footprintHeight = SQUARE_SIZE * def.xsize
 	else
-		footprintWidth = 4 * def.xsize
-		footprintHeight = 4 * def.zsize
+		footprintWidth = SQUARE_SIZE * def.xsize
+		footprintHeight = SQUARE_SIZE * def.zsize
 	end
-	return footprintWidth * 2, footprintHeight * 2
+	
+	local stepWidth = footprintWidth + SQUARE_SIZE * buildSpacing * 2
+	local stepHeight = footprintHeight + SQUARE_SIZE * buildSpacing * 2
+	
+	return stepWidth, stepHeight
 end
 
 local function buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
 	return tostring(snappedX)..":"..tostring(snappedY)..":"..tostring(snappedZ)..":"..tostring(buildFacing)
 end
 
-local function computeDragPreviewPositions(unitDefID, startPosition, endPosition, buildFacing, useGridPlacement)
+local function fillRow(x, z, xStep, zStep, n, facing)
+	local result = {}
+	for _ = 1, n do
+		result[#result + 1] = { x, 0, z, facing }
+		x = x + xStep
+		z = z + zStep
+	end
+	return result
+end
+
+local function computeBoxPreviewPositions(unitDefID, startPosition, endPosition, buildFacing)
+	local computedPositions = {}
+	local seenPositions = {}
+	local startX, startY, startZ = snapBuildPosition(unitDefID, startPosition[1], startPosition[2], startPosition[3], buildFacing)
+	local endX, endY, endZ = snapBuildPosition(unitDefID, endPosition[1], endPosition[2], endPosition[3], buildFacing)
+	local stepWidth, stepDepth = getBuildingCenterStep(unitDefID, buildFacing)
+	local deltaX = endX - startX
+	local deltaZ = endZ - startZ
+	
+	local xSteps = math.floor(math.abs(deltaX) / stepWidth) + 1
+	local zSteps = math.floor(math.abs(deltaZ) / stepDepth) + 1
+	
+	local xDirection = deltaX >= 0 and 1 or -1
+	local zDirection = deltaZ >= 0 and 1 or -1
+	
+	local xStep = stepWidth * xDirection
+	local zStep = stepDepth * zDirection
+	
+	if xSteps > 1 and zSteps > 1 then
+		-- go down left side
+		local leftSide = fillRow(startX, startZ + zStep, 0, zStep, zSteps - 1, buildFacing)
+		for _, pos in ipairs(leftSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+		
+		-- go right bottom side
+		local bottomSide = fillRow(startX + xStep, startZ + (zSteps - 1) * zStep, xStep, 0, xSteps - 1, buildFacing)
+		for _, pos in ipairs(bottomSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+		
+		-- go up right side
+		local rightSide = fillRow(startX + (xSteps - 1) * xStep, startZ + (zSteps - 2) * zStep, 0, -zStep, zSteps - 1, buildFacing)
+		for _, pos in ipairs(rightSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+		
+		-- go left top side
+		local topSide = fillRow(startX + (xSteps - 2) * xStep, startZ, -xStep, 0, xSteps - 1, buildFacing)
+		for _, pos in ipairs(topSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+	elseif xSteps == 1 then
+		local singleRow = fillRow(startX, startZ, 0, zStep, zSteps, buildFacing)
+		for _, pos in ipairs(singleRow) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+	elseif zSteps == 1 then
+		local singleRow = fillRow(startX, startZ, xStep, 0, xSteps, buildFacing)
+		for _, pos in ipairs(singleRow) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+	end
+	
+	return computedPositions
+end
+
+local function computeDragPreviewPositions(unitDefID, startPosition, endPosition, buildFacing, useGridPlacement, useBoxPlacement)
+	if useBoxPlacement then
+		return computeBoxPreviewPositions(unitDefID, startPosition, endPosition, buildFacing)
+	end
+	
 	local computedPositions = {}
 	local seenPositions = {}
 	local startX, startY, startZ = snapBuildPosition(unitDefID, startPosition[1], startPosition[2], startPosition[3], buildFacing)
@@ -277,6 +386,43 @@ local function handleSelectedBuildingConversion(currentSelDefID, prevFactionSide
 	return newSelDefID
 end
 
+local function buildSpacingHandler(cmd, line, words, playerID)
+	if not preGamestartPlayer then
+		return
+	end
+	
+	local currentSpacing = Spring.GetBuildSpacing() or 0
+	local newSpacing = currentSpacing
+	
+	if words[1] == "inc" then
+		newSpacing = math.min(16, currentSpacing + 1)
+	elseif words[1] == "dec" then
+		newSpacing = math.max(0, currentSpacing - 1)
+	elseif words[1] == "set" and words[2] then
+		newSpacing = math.max(0, math.min(16, tonumber(words[2]) or currentSpacing))
+	end
+	
+	if newSpacing ~= currentSpacing then
+		Spring.SetBuildSpacing(newSpacing)
+		Spring.Echo("Build spacing set to " .. newSpacing)
+		
+		-- Refresh current drag preview if active
+		if dragActive and selBuildQueueDefID then
+			local mx, my = Spring.GetMouseState()
+			local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+			if pos then
+				local buildFacing = Spring.GetBuildFacing()
+				local alt, ctrl, meta, shift = Spring.GetModKeyState()
+				local useBoxPlacement = alt and ctrl and shift
+				local useGridPlacement = alt and not useBoxPlacement
+				dragPreviewPositions = computeDragPreviewPositions(selBuildQueueDefID, dragStartPosition, { pos[1], pos[2], pos[3] }, buildFacing, useGridPlacement, useBoxPlacement)
+			end
+		end
+	end
+	
+	return true
+end
+
 ------------------------------------------
 ---               INIT                 ---
 ------------------------------------------
@@ -284,6 +430,7 @@ function widget:Initialize()
 	widgetHandler:AddAction("stop", clearPregameBuildQueue, nil, "p")
 	widgetHandler:AddAction("buildfacing", buildFacingHandler, nil, "p")
 	widgetHandler:AddAction("buildmenu_pregame_deselect", buildmenuPregameDeselectHandler, nil, "p")
+	widgetHandler:AddAction("buildspacing", buildSpacingHandler, nil, "p")
 
 	Spring.Log(widget:GetInfo().name, LOG.INFO, "Pregame Queue Initializing. Local SubLogic is assumed available.")
 
@@ -621,14 +768,15 @@ function widget:MouseMove(mx, my, dx, dy, button)
 		return false
 	end
 	
-	local altPressed = select(1, Spring.GetModKeyState())
+	local altPressed, ctrlPressed, metaPressed, shiftPressed = Spring.GetModKeyState()
 	local _, worldPosition = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
 	if not worldPosition then
 		return false
 	end
 	local buildFacing = Spring.GetBuildFacing()
-	local useGridPlacement = altPressed and true or false
-	dragPreviewPositions = computeDragPreviewPositions(selBuildQueueDefID, dragStartPosition, { worldPosition[1], worldPosition[2], worldPosition[3] }, buildFacing, useGridPlacement)
+	local useBoxPlacement = altPressed and ctrlPressed and shiftPressed
+	local useGridPlacement = altPressed and not useBoxPlacement
+	dragPreviewPositions = computeDragPreviewPositions(selBuildQueueDefID, dragStartPosition, { worldPosition[1], worldPosition[2], worldPosition[3] }, buildFacing, useGridPlacement, useBoxPlacement)
 	return true
 end
 
