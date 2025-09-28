@@ -369,20 +369,24 @@ local function updateDataModel(forceUpdate)
 end
 
 
-local function getBuildQueueSpawnStatus(buildQueue, selectedBuildData)
+local function getBuildQueueSpawnStatus(buildQueue, selectedBuildData, dragPreviewPositions)
 	local myTeamID = spGetMyTeamID() or 0
 	local gameRules = getCachedGameRules(myTeamID)
 	local spawnResults = {
 		queueSpawned = {},
-		selectedSpawned = false
+		selectedSpawned = false,
+		dragSpawned = {}
 	}
 	
 	local remainingBudget = gameRules.budgetTotal
 	local firstFactoryPlaced = false
 	local commanderX, commanderY, commanderZ = getCommanderPosition(myTeamID)
 	
-	local dragPreviewPositions = WG and WG["pregame-build"] and WG["pregame-build"].getDragPreviewPositions and
-		WG["pregame-build"].getDragPreviewPositions() or {}
+	-- Use provided dragPreviewPositions or get from WG
+	if not dragPreviewPositions then
+		dragPreviewPositions = WG and WG["pregame-build"] and WG["pregame-build"].getDragPreviewPositions and
+			WG["pregame-build"].getDragPreviewPositions() or {}
+	end
 	local isDragActive = WG and WG["pregame-build"] and WG["pregame-build"].isDragActive and
 		WG["pregame-build"].isDragActive() or false
 	
@@ -413,21 +417,30 @@ local function getBuildQueueSpawnStatus(buildQueue, selectedBuildData)
 		end
 	end
 	
+	-- Calculate individual spawned status for drag preview positions
 	if isDragActive and dragPreviewPositions and #dragPreviewPositions > 0 then
 		local dragPreviewCost = 0
 		for i = 1, #dragPreviewPositions do
 			local positionData = dragPreviewPositions[i]
 			local unitDefID = positionData[1]
 			local buildX, buildZ = positionData[2], positionData[4]
+			local isSpawned = false
 			
 			if isWithinBuildRange(commanderX, commanderZ, buildX, buildZ, gameRules.instantBuildRange) then
 				local budgetCost = calculateBudgetForItem(unitDefID, gameRules, shouldApplyFactoryDiscount, not firstFactoryPlaced)
-				dragPreviewCost = dragPreviewCost + budgetCost
 				
-				if UnitDefs[unitDefID] and UnitDefs[unitDefID].isFactory and not firstFactoryPlaced then
-					firstFactoryPlaced = true
+				if remainingBudget >= budgetCost then
+					isSpawned = true
+					remainingBudget = remainingBudget - budgetCost
+					dragPreviewCost = dragPreviewCost + budgetCost
+					
+					if UnitDefs[unitDefID] and UnitDefs[unitDefID].isFactory and not firstFactoryPlaced then
+						firstFactoryPlaced = true
+					end
 				end
 			end
+			
+			spawnResults.dragSpawned[i] = isSpawned
 		end
 		
 		spawnResults.selectedSpawned = remainingBudget >= dragPreviewCost

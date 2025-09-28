@@ -1052,18 +1052,53 @@ function widget:DrawWorld()
 		if selBuildData then
 			hideKey = buildPositionKey(selBuildData[2], selBuildData[3], selBuildData[4], selBuildData[5])
 		end
+		
+		-- Calculate spawned status for drag preview positions
+		local dragSpawnedKeySet = {}
+		local getBuildQueueSpawnStatus = WG["getBuildQueueSpawnStatus"]
+		if getBuildQueueSpawnStatus then
+			local spawnStatus = getBuildQueueSpawnStatus(buildQueue, nil, dragPreviewPositions)
+			if spawnStatus and spawnStatus.dragSpawned then
+				for i = 1, #dragPreviewPositions do
+					if spawnStatus.dragSpawned[i] then
+						local positionData = dragPreviewPositions[i]
+						local posKey = buildPositionKey(positionData[2], positionData[3], positionData[4], positionData[5])
+						dragSpawnedKeySet[posKey] = true
+					end
+				end
+			end
+		else
+			-- Fallback: simple distance-based spawned detection
+			local commanderX, commanderY, commanderZ = Spring.GetTeamStartPosition(Spring.GetMyTeamID())
+			if commanderX and commanderX ~= -100 then
+				local INSTANT_BUILD_RANGE = 200 -- Fallback range
+				for i = 1, #dragPreviewPositions do
+					local positionData = dragPreviewPositions[i]
+					local buildX, buildZ = positionData[2], positionData[4]
+					local distance = math.sqrt((buildX - commanderX)^2 + (buildZ - commanderZ)^2)
+					
+					if distance <= INSTANT_BUILD_RANGE then
+						local posKey = buildPositionKey(positionData[2], positionData[3], positionData[4], positionData[5])
+						dragSpawnedKeySet[posKey] = true
+					end
+				end
+			end
+		end
+		
 		for i = 1, #dragPreviewPositions do
 			local positionData = dragPreviewPositions[i]
 			local posKey = buildPositionKey(positionData[2], positionData[3], positionData[4], positionData[5])
 			if posKey ~= hideKey then
 				local canBuild = spTestBuildOrder(positionData[1], positionData[2], positionData[3], positionData[4], positionData[5]) ~= 0
-				local isSpawned = spawnedQueueKeySet[posKey] == true
+				local isSpawned = dragSpawnedKeySet[posKey] == true
 				local color
 				if canBuild then
 					color = isSpawned and BORDER_COLOR_SPAWNED or BORDER_COLOR_VALID
 				else
 					color = BORDER_COLOR_INVALID
 				end
+				
+				
 				DrawBuilding(positionData, color, false, isSpawned and ALPHA_SPAWNED or DRAG_PREVIEW_ALPHA)
 			end
 		end
