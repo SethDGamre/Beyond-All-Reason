@@ -77,6 +77,10 @@ local function buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
 	return tostring(snappedX)..":"..tostring(snappedY)..":"..tostring(snappedZ)..":"..tostring(buildFacing)
 end
 
+local function isUnderwater(unitDefID)
+	return UnitDefs[unitDefID].modCategories.underwater
+end
+
 local function fillRow(x, z, xStep, zStep, n, facing)
 	local result = {}
 	for _ = 1, n do
@@ -404,7 +408,6 @@ local function buildSpacingHandler(cmd, line, words, playerID)
 	
 	if newSpacing ~= currentSpacing then
 		Spring.SetBuildSpacing(newSpacing)
-		Spring.Echo("Build spacing set to " .. newSpacing)
 		
 		-- Refresh current drag preview if active
 		if dragActive and selBuildQueueDefID then
@@ -551,10 +554,6 @@ local function DrawBuilding(buildData, borderColor, drawRanges, alpha)
 			.. buildData[5]
 		addUnitShape(id, buildData[1], buildData[2], buildData[3], buildData[4], buildData[5] * (math.pi / 2), myTeamID, alpha)
 	end
-end
-
-local function isUnderwater(unitDefID)
-	return UnitDefs[unitDefID].modCategories.underwater
 end
 
 -- Special handling for buildings before game start, since there isn't yet a unit spawned to give normal orders to
@@ -1068,21 +1067,6 @@ function widget:DrawWorld()
 				end
 			end
 		else
-			-- Fallback: simple distance-based spawned detection
-			local commanderX, commanderY, commanderZ = Spring.GetTeamStartPosition(Spring.GetMyTeamID())
-			if commanderX and commanderX ~= -100 then
-				local INSTANT_BUILD_RANGE = 200 -- Fallback range
-				for i = 1, #dragPreviewPositions do
-					local positionData = dragPreviewPositions[i]
-					local buildX, buildZ = positionData[2], positionData[4]
-					local distance = math.sqrt((buildX - commanderX)^2 + (buildZ - commanderZ)^2)
-					
-					if distance <= INSTANT_BUILD_RANGE then
-						local posKey = buildPositionKey(positionData[2], positionData[3], positionData[4], positionData[5])
-						dragSpawnedKeySet[posKey] = true
-					end
-				end
-			end
 		end
 		
 		for i = 1, #dragPreviewPositions do
@@ -1219,6 +1203,7 @@ function widget:GetConfigData()
 	return {
 		buildQueue = buildQueue,
 		gameID = Game.gameID and Game.gameID or Spring.GetGameRulesParam("GameID"),
+		buildSpacing = Spring.GetBuildSpacing() or 0,
 	}
 end
 
@@ -1230,5 +1215,10 @@ function widget:SetConfigData(data)
 		and data.gameID == (Game.gameID and Game.gameID or Spring.GetGameRulesParam("GameID"))
 	then
 		buildQueue = data.buildQueue
+	end
+	
+	-- Restore build spacing if available
+	if data.buildSpacing and Spring.GetGameFrame() == 0 then
+		Spring.SetBuildSpacing(data.buildSpacing)
 	end
 end
