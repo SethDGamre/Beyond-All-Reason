@@ -29,7 +29,7 @@ return {
 		script = "Units/ARMSFIG2.cob",
 		seismicsignature = 0,
 		selfdestructas = "smallExplosionGenericAir",
-		sightdistance = 230,
+		sightdistance = 430,
 		speed = 310.79999,
 		speedtofront = 0.07,
 		turnradius = 64,
@@ -38,6 +38,7 @@ return {
 		wingdrag = 0.235,
 		customparams = {
 			attacksafetydistance = 300,
+			fighter = 1,
 			model_author = "FireStorm",
 			normaltex = "unittextures/Arm_normal.dds",
 			subfolder = "ArmSeaplanes",

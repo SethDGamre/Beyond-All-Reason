@@ -30,7 +30,7 @@ return {
 		script = "Units/legafigdef.cob",
 		seismicsignature = 0,
 		selfdestructas = "smallExplosionGenericAir",
-		sightdistance = 250,
+		sightdistance = 430,
 		speedtofront = 0.06475,
 		stealth = false,
 		turnradius = 32,
@@ -45,6 +45,7 @@ return {
 			subfolder = "Legion/Air/T2 Air",
 			techlevel = 2,
 			attacksafetydistance = 300,
+			fighter = 1,
 		},
 		sfxtypes = {
 			explosiongenerators = {
