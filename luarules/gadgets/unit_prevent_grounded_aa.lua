@@ -69,8 +69,11 @@ local function clearTargetsAttackers(unitID)
 	Spring.Echo("Clearing targets for", unitID, "with targetedFlyers", targetedFlyers[unitID])
 	if targetedFlyers[unitID] then
 		for attackerID, _ in pairs(targetedFlyers[unitID]) do
-			Spring.Echo("Clearing target", attackerID, "for", unitID, "with weaponDefID", targetedFlyers[unitID][attackerID])
-			spSetUnitTarget(attackerID, nil)
+			Spring.Echo("Clearing target", attackerID, "for", unitID)
+			local attackerDefID = spGetUnitDefID(attackerID)
+			Spring.Echo("attacker name:", UnitDefs[attackerDefID] and UnitDefs[attackerDefID].name or "Unknown")
+			local success = spSetUnitTarget(attackerID, nil)
+			Spring.Echo("Success:", success)
 		end
 		targetedFlyers[unitID] = nil
 	end
