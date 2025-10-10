@@ -47,6 +47,7 @@ for unitDefID, unitDef in pairs(UnitDefs) do
 				if not hasOtherTargets then
 					vtolOnlyWeaponDefs[weaponDefID] = true
 					Script.SetWatchAllowTarget(weapon.weaponDef, true)
+					Spring.Echo("VTOL-only weaponDefID", weaponDefID)
 				end
 			end
 		end
@@ -65,8 +66,10 @@ function gadget:UnitEnteredAir(unitID, unitDefID)
 end
 
 local function clearTargetsAttackers(unitID)
+	Spring.Echo("Clearing targets for", unitID, "with targetedFlyers", targetedFlyers[unitID])
 	if targetedFlyers[unitID] then
 		for attackerID, _ in pairs(targetedFlyers[unitID]) do
+			Spring.Echo("Clearing target", attackerID, "for", unitID, "with weaponDefID", targetedFlyers[unitID][attackerID])
 			spSetUnitTarget(attackerID, nil)
 		end
 		targetedFlyers[unitID] = nil
@@ -87,20 +90,18 @@ function gadget:UnitDestroyed(unitID, unitDefID, unitTeam, attackerID, attackerD
 end
 
 function gadget:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum, attackerWeaponDefID, defPriority)
-	if targetID == -1 and attackerWeaponNum == -1 then
-		return true, defPriority or 1.0
-	end
-
 	if not vtolOnlyWeaponDefs[attackerWeaponDefID] then
-		targetedFlyers[targetID] = targetedFlyers[targetID] or {}
-		targetedFlyers[targetID][attackerID] = true
+		Spring.Echo("Allowing weapon target for", attackerID, "with weaponDefID", attackerWeaponDefID)
 		return true, defPriority or 1.0
 	end
 
 	if flyingUnits[targetID] and spGetUnitRulesParam(targetID, "drone_docked_untargetable") ~= 1 then
+		targetedFlyers[targetID] = targetedFlyers[targetID] or {}
+		targetedFlyers[targetID][attackerID] = true
 		return true, defPriority or 1.0
 	end
-
+	
+	clearTargetsAttackers(targetID)
 	return false, defPriority or 0
 end
 
