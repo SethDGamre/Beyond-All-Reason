@@ -30,6 +30,219 @@ local metalMap = false
 
 local unitshapes = {}
 
+local dragActive = false
+local dragStartPosition = nil
+local dragPreviewPositions = {}
+local DRAG_PREVIEW_ALPHA = 0.5
+local potentialDragStart = false
+local dragStartMousePos = nil
+local DRAG_THRESHOLD = Spring.GetConfigInt("MouseDragSelectionThreshold", 4)
+
+local function clearDrag()
+	dragActive = false
+	dragStartPosition = nil
+	dragPreviewPositions = {}
+	potentialDragStart = false
+	dragStartMousePos = nil
+end
+
+local function snapBuildPosition(unitDefID, worldX, worldY, worldZ, buildFacing)
+	local snappedX, snappedY, snappedZ = Spring.Pos2BuildPos(unitDefID, worldX, worldY, worldZ, buildFacing)
+	return snappedX, snappedY, snappedZ
+end
+
+
+local function getBuildingCenterStep(unitDefID, buildFacing)
+	local SQUARE_SIZE = 8
+	local buildSpacing = Spring.GetBuildSpacing() or 0
+	
+	local def = UnitDefs[unitDefID]
+	local footprintWidth
+	local footprintHeight
+	if buildFacing % 2 == 1 then
+		footprintWidth = SQUARE_SIZE * def.zsize
+		footprintHeight = SQUARE_SIZE * def.xsize
+	else
+		footprintWidth = SQUARE_SIZE * def.xsize
+		footprintHeight = SQUARE_SIZE * def.zsize
+	end
+	
+	local stepWidth = footprintWidth + SQUARE_SIZE * buildSpacing * 2
+	local stepHeight = footprintHeight + SQUARE_SIZE * buildSpacing * 2
+	
+	return stepWidth, stepHeight
+end
+
+local function buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+	return tostring(snappedX)..":"..tostring(snappedY)..":"..tostring(snappedZ)..":"..tostring(buildFacing)
+end
+
+local function isUnderwater(unitDefID)
+	return UnitDefs[unitDefID].modCategories.underwater
+end
+
+local function fillRow(x, z, xStep, zStep, n, facing)
+	local result = {}
+	for _ = 1, n do
+		result[#result + 1] = { x, 0, z, facing }
+		x = x + xStep
+		z = z + zStep
+	end
+	return result
+end
+
+local function computeBoxPreviewPositions(unitDefID, startPosition, endPosition, buildFacing)
+	local computedPositions = {}
+	local seenPositions = {}
+	local startX, startY, startZ = snapBuildPosition(unitDefID, startPosition[1], startPosition[2], startPosition[3], buildFacing)
+	local endX, endY, endZ = snapBuildPosition(unitDefID, endPosition[1], endPosition[2], endPosition[3], buildFacing)
+	local stepWidth, stepDepth = getBuildingCenterStep(unitDefID, buildFacing)
+	local deltaX = endX - startX
+	local deltaZ = endZ - startZ
+	
+	local xSteps = math.floor(math.abs(deltaX) / stepWidth) + 1
+	local zSteps = math.floor(math.abs(deltaZ) / stepDepth) + 1
+	
+	local xDirection = deltaX >= 0 and 1 or -1
+	local zDirection = deltaZ >= 0 and 1 or -1
+	
+	local xStep = stepWidth * xDirection
+	local zStep = stepDepth * zDirection
+	
+	if xSteps > 1 and zSteps > 1 then
+		-- go down left side
+		local leftSide = fillRow(startX, startZ + zStep, 0, zStep, zSteps - 1, buildFacing)
+		for _, pos in ipairs(leftSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+		
+		-- go right bottom side
+		local bottomSide = fillRow(startX + xStep, startZ + (zSteps - 1) * zStep, xStep, 0, xSteps - 1, buildFacing)
+		for _, pos in ipairs(bottomSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+		
+		-- go up right side
+		local rightSide = fillRow(startX + (xSteps - 1) * xStep, startZ + (zSteps - 2) * zStep, 0, -zStep, zSteps - 1, buildFacing)
+		for _, pos in ipairs(rightSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+		
+		-- go left top side
+		local topSide = fillRow(startX + (xSteps - 2) * xStep, startZ, -xStep, 0, xSteps - 1, buildFacing)
+		for _, pos in ipairs(topSide) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+	elseif xSteps == 1 then
+		local singleRow = fillRow(startX, startZ, 0, zStep, zSteps, buildFacing)
+		for _, pos in ipairs(singleRow) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+	elseif zSteps == 1 then
+		local singleRow = fillRow(startX, startZ, xStep, 0, xSteps, buildFacing)
+		for _, pos in ipairs(singleRow) do
+			local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, pos[1], startY, pos[3], buildFacing)
+			local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+			if not seenPositions[k] then
+				seenPositions[k] = true
+				computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+			end
+		end
+	end
+	
+	return computedPositions
+end
+
+local function computeDragPreviewPositions(unitDefID, startPosition, endPosition, buildFacing, useGridPlacement, useBoxPlacement)
+	if useBoxPlacement then
+		return computeBoxPreviewPositions(unitDefID, startPosition, endPosition, buildFacing)
+	end
+	
+	local computedPositions = {}
+	local seenPositions = {}
+	local startX, startY, startZ = snapBuildPosition(unitDefID, startPosition[1], startPosition[2], startPosition[3], buildFacing)
+	local endX, endY, endZ = snapBuildPosition(unitDefID, endPosition[1], endPosition[2], endPosition[3], buildFacing)
+	local stepWidth, stepDepth = getBuildingCenterStep(unitDefID, buildFacing)
+	local deltaX = endX - startX
+	local deltaZ = endZ - startZ
+	if useGridPlacement then
+		local numX = math.max(1, math.floor(math.abs(deltaX) / stepWidth) + 1)
+		local numZ = math.max(1, math.floor(math.abs(deltaZ) / stepDepth) + 1)
+		local stepDirX = deltaX >= 0 and stepWidth or -stepWidth
+		local stepDirZ = deltaZ >= 0 and stepDepth or -stepDepth
+		local rowStartX = startX
+		local rowZ = startZ
+		for _ = 1, numZ do
+			local currentX = rowStartX
+			for _ = 1, numX do
+				local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, currentX, startY, rowZ, buildFacing)
+				local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+				if not seenPositions[k] then
+					seenPositions[k] = true
+					computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+				end
+				currentX = currentX + stepDirX
+			end
+			rowZ = rowZ + stepDirZ
+		end
+	else
+		local lineDominatesX = math.abs(deltaX) >= math.abs(deltaZ)
+		if lineDominatesX then
+			local count = math.max(1, math.floor(math.abs(deltaX) / stepWidth) + 1)
+			local dir = deltaX >= 0 and stepWidth or -stepWidth
+			local currentX = startX
+			for i = 1, count do
+				local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, currentX, startY, startZ + math.floor((deltaZ / math.max(1, count - 1)) * (i - 1)), buildFacing)
+				local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+				if not seenPositions[k] then
+					seenPositions[k] = true
+					computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+				end
+				currentX = currentX + dir
+			end
+		else
+			local count = math.max(1, math.floor(math.abs(deltaZ) / stepDepth) + 1)
+			local dir = deltaZ >= 0 and stepDepth or -stepDepth
+			local currentZ = startZ
+			for i = 1, count do
+				local snappedX, snappedY, snappedZ = snapBuildPosition(unitDefID, startX + math.floor((deltaX / math.max(1, count - 1)) * (i - 1)), startY, currentZ, buildFacing)
+				local k = buildPositionKey(snappedX, snappedY, snappedZ, buildFacing)
+				if not seenPositions[k] then
+					seenPositions[k] = true
+					computedPositions[#computedPositions + 1] = { unitDefID, snappedX, snappedY, snappedZ, buildFacing }
+				end
+				currentZ = currentZ + dir
+			end
+		end
+	end
+	return computedPositions
+end
+
 local function buildFacingHandler(_, _, args)
 	if not (preGamestartPlayer and selBuildQueueDefID) then
 		return
@@ -70,6 +283,7 @@ local FORCE_SHOW_REASON = "gui_pregame_build"
 local function setPreGamestartDefID(uDefID)
 	selBuildQueueDefID = uDefID
 
+	-- Communicate selected unit to quick start UI via WG
 	if preGamestartPlayer then
 		WG["pregame-unit-selected"] = uDefID or -1
 	end
@@ -176,6 +390,42 @@ local function handleSelectedBuildingConversion(currentSelDefID, prevFactionSide
 	return newSelDefID
 end
 
+local function buildSpacingHandler(cmd, line, words, playerID)
+	if not preGamestartPlayer then
+		return
+	end
+	
+	local currentSpacing = Spring.GetBuildSpacing() or 0
+	local newSpacing = currentSpacing
+	
+	if words[1] == "inc" then
+		newSpacing = math.min(16, currentSpacing + 1)
+	elseif words[1] == "dec" then
+		newSpacing = math.max(0, currentSpacing - 1)
+	elseif words[1] == "set" and words[2] then
+		newSpacing = math.max(0, math.min(16, tonumber(words[2]) or currentSpacing))
+	end
+	
+	if newSpacing ~= currentSpacing then
+		Spring.SetBuildSpacing(newSpacing)
+		
+		-- Refresh current drag preview if active
+		if dragActive and selBuildQueueDefID then
+			local mx, my = Spring.GetMouseState()
+			local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+			if pos then
+				local buildFacing = Spring.GetBuildFacing()
+				local alt, ctrl, meta, shift = Spring.GetModKeyState()
+				local useBoxPlacement = alt and ctrl and shift
+				local useGridPlacement = alt and not useBoxPlacement
+				dragPreviewPositions = computeDragPreviewPositions(selBuildQueueDefID, dragStartPosition, { pos[1], pos[2], pos[3] }, buildFacing, useGridPlacement, useBoxPlacement)
+			end
+		end
+	end
+	
+	return true
+end
+
 ------------------------------------------
 ---               INIT                 ---
 ------------------------------------------
@@ -183,6 +433,7 @@ function widget:Initialize()
 	widgetHandler:AddAction("stop", clearPregameBuildQueue, nil, "p")
 	widgetHandler:AddAction("buildfacing", buildFacingHandler, nil, "p")
 	widgetHandler:AddAction("buildmenu_pregame_deselect", buildmenuPregameDeselectHandler, nil, "p")
+	widgetHandler:AddAction("buildspacing", buildSpacingHandler, nil, "p")
 
 	Spring.Log(widget:GetInfo().name, LOG.INFO, "Pregame Queue Initializing. Local SubLogic is assumed available.")
 
@@ -222,6 +473,12 @@ function widget:Initialize()
 	end
 	WG["pregame-build"].getBuildQueue = function()
 		return buildQueue
+	end
+	WG["pregame-build"].getDragPreviewPositions = function()
+		return dragPreviewPositions
+	end
+	WG["pregame-build"].isDragActive = function()
+		return dragActive
 	end
 	widgetHandler:RegisterGlobal("GetPreGameDefID", WG["pregame-build"].getPreGameDefID)
 	widgetHandler:RegisterGlobal("GetBuildQueue", WG["pregame-build"].getBuildQueue)
@@ -299,28 +556,88 @@ local function DrawBuilding(buildData, borderColor, drawRanges, alpha)
 	end
 end
 
-local function isUnderwater(unitDefID)
-	return UnitDefs[unitDefID].modCategories.underwater
-end
-
 -- Special handling for buildings before game start, since there isn't yet a unit spawned to give normal orders to
 function widget:MousePress(mx, my, button)
 	if Spring.IsGUIHidden() then
-		return
+		return false
 	end
 
 	if WG["topbar"] and WG["topbar"].showingQuit() then
-		return
+		return false
 	end
 
 	if not preGamestartPlayer then
-		return
+		return false
 	end
-	local _, _, meta, shift = Spring.GetModKeyState()
+	
+	local _, ctrl, meta, shift = Spring.GetModKeyState()
+	local queueShift = Spring.GetInvertQueueKey() and (not shift) or shift
 
 	if selBuildQueueDefID then
-		local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+		if button == 1 and queueShift then
+			local isMex = UnitDefs[selBuildQueueDefID] and UnitDefs[selBuildQueueDefID].extractsMetal > 0
+			
+			if isMex and not metalMap then
+				local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+				if WG.ExtractorSnap then
+					local snapPos = WG.ExtractorSnap.position
+					if snapPos then
+						pos = { snapPos.x, snapPos.y, snapPos.z }
+					end
+				end
+
+				if not pos then
+					return false
+				end
+
+				local buildFacing = Spring.GetBuildFacing()
+				local bx, by, bz = Spring.Pos2BuildPos(selBuildQueueDefID, pos[1], pos[2], pos[3], buildFacing)
+				local buildData = { selBuildQueueDefID, bx, by, bz, buildFacing }
+				local cx, cy, cz = Spring.GetTeamStartPosition(myTeamID)
+
+				if cx ~= -100 then
+					local cbx, cby, cbz = Spring.Pos2BuildPos(tonumber(startDefID) or 0, cx or 0, cy or 0, cz or 0)
+					if DoBuildingsClash(buildData, { startDefID, cbx, cby, cbz, 1 }) then
+						return true
+					end
+				end
+
+				if Spring.TestBuildOrder(selBuildQueueDefID, bx, by, bz, buildFacing) ~= 0 then
+					local spot = WG["resource_spot_finder"].GetClosestMexSpot(bx, bz)
+					local spotIsTaken = spot and WG["resource_spot_builder"].SpotHasExtractorQueued(spot, nil) or false
+					if not spot or spotIsTaken then
+						return true
+					end
+
+					local anyClashes = false
+					for i = #buildQueue, 1, -1 do
+						if buildQueue[i][1] > 0 and DoBuildingsClash(buildData, buildQueue[i]) then
+							anyClashes = true
+							table.remove(buildQueue, i)
+						end
+					end
+
+					if not anyClashes then
+						buildQueue[#buildQueue + 1] = buildData
+						handleBuildMenu(queueShift)
+					end
+				end
+				return true
+			end
+			
+			local _, worldPosition = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+			if not worldPosition then
+				return false
+			end
+			potentialDragStart = true
+			dragStartMousePos = { mx, my }
+			dragStartPosition = { worldPosition[1], worldPosition[2], worldPosition[3] }
+			dragPreviewPositions = {}
+			return true
+		end
+		
 		if button == 1 then
+			local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
 			local isMex = UnitDefs[selBuildQueueDefID] and UnitDefs[selBuildQueueDefID].extractsMetal > 0
 			if WG.ExtractorSnap then
 				local snapPos = WG.ExtractorSnap.position
@@ -330,7 +647,7 @@ function widget:MousePress(mx, my, button)
 			end
 
 			if not pos then
-				return
+				return false
 			end
 
 			local buildFacing = Spring.GetBuildFacing()
@@ -338,8 +655,8 @@ function widget:MousePress(mx, my, button)
 			local buildData = { selBuildQueueDefID, bx, by, bz, buildFacing }
 			local cx, cy, cz = Spring.GetTeamStartPosition(myTeamID) -- Returns -100, -100, -100 when none chosen
 
-			if (meta or not shift) and cx ~= -100 then
-				local cbx, cby, cbz = Spring.Pos2BuildPos(startDefID, cx, cy, cz)
+			if (meta or not queueShift) and cx ~= -100 then
+				local cbx, cby, cbz = Spring.Pos2BuildPos(tonumber(startDefID) or 0, cx or 0, cy or 0, cz or 0)
 
 				if DoBuildingsClash(buildData, { startDefID, cbx, cby, cbz, 1 }) then -- avoid clashing building and commander position
 					return true
@@ -347,9 +664,9 @@ function widget:MousePress(mx, my, button)
 			end
 
 			if Spring.TestBuildOrder(selBuildQueueDefID, bx, by, bz, buildFacing) ~= 0 then
-				if meta then
-					table.insert(buildQueue, 1, buildData)
-				elseif shift then
+                if meta then
+                    table.insert(buildQueue, 1, buildData)
+                elseif queueShift then
 					local anyClashes = false
 					for i = #buildQueue, 1, -1 do
 						if buildQueue[i][1] > 0 then
@@ -361,65 +678,199 @@ function widget:MousePress(mx, my, button)
 					end
 
 					if isMex and not metalMap then
-						-- Special handling to check if mex position is valid
 						local spot = WG["resource_spot_finder"].GetClosestMexSpot(bx, bz)
-						local validPos = spot and WG["resource_spot_finder"].IsMexPositionValid(spot, bx, bz) or false
-						local spotIsTaken = spot and WG["resource_spot_builder"].SpotHasExtractorQueued(spot) or false
-						if not validPos or spotIsTaken then
+						local spotIsTaken = spot and WG["resource_spot_builder"].SpotHasExtractorQueued(spot, nil) or false
+						if not spot or spotIsTaken then
 							return true
 						end
 					end
 
 					if not anyClashes then
 						buildQueue[#buildQueue + 1] = buildData
-						handleBuildMenu(shift)
+						handleBuildMenu(queueShift)
 					end
 				else
-					-- don't place mex if the spot is not valid
 					if isMex then
 						if WG.ExtractorSnap.position or metalMap then
 							buildQueue = { buildData }
 						end
 					else
 						buildQueue = { buildData }
-						handleBuildMenu(shift)
+						handleBuildMenu(queueShift)
 					end
 				end
 
-				if not shift then
+				if not queueShift then
 					setPreGamestartDefID(nil)
-					handleBuildMenu(shift)
+					handleBuildMenu(queueShift)
 				end
 			end
 
 			return true
 		elseif button == 3 then
 			setPreGamestartDefID(nil)
+			return true
 		end
-	elseif button == 1 and #buildQueue > 0 and buildQueue[1][1]>0 then -- avoid clashing first building and commander position
+	elseif button == 1 and #buildQueue > 0 and buildQueue[1][1]>0 then
 		local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(startDefID))
 		if not pos then
-			return
+			return false
 		end
-		local cbx, cby, cbz = Spring.Pos2BuildPos(startDefID, pos[1], pos[2], pos[3])
+		local cbx, cby, cbz = Spring.Pos2BuildPos(tonumber(startDefID) or 0, pos[1], pos[2], pos[3])
 
 		if DoBuildingsClash({ startDefID, cbx, cby, cbz, 1 }, buildQueue[1]) then
 			return true
 		end
-	elseif button == 3 and shift then
+	elseif button == 3 and queueShift then
 		local x, y, _ = Spring.GetMouseState()
 		local _, pos = Spring.TraceScreenRay(x, y, true, false, false, true)
 		if pos and pos[1] then
 			local buildData = { -CMD.MOVE, pos[1], pos[2], pos[3], nil }
-
 			buildQueue[#buildQueue + 1] = buildData
 		end
-	elseif button == 3 and #buildQueue > 0 then -- remove units from buildqueue one by one
-		-- TODO: If mouse is over a building, remove only that building instead
+		return true
+	elseif button == 3 and #buildQueue > 0 then
 		table.remove(buildQueue, #buildQueue)
-
 		return true
 	end
+	
+	return false
+end
+
+function widget:MouseMove(mx, my, dx, dy, button)
+	if not selBuildQueueDefID then
+		return false
+	end
+	
+	local isMex = UnitDefs[selBuildQueueDefID] and UnitDefs[selBuildQueueDefID].extractsMetal > 0
+	if isMex and not metalMap then
+		if potentialDragStart then
+			clearDrag()
+		end
+		return false
+	end
+	
+	if potentialDragStart and not dragActive then
+		local mouseDeltaX = mx - dragStartMousePos[1]
+		local mouseDeltaY = my - dragStartMousePos[2]
+		local mouseDistance = math.sqrt(mouseDeltaX * mouseDeltaX + mouseDeltaY * mouseDeltaY)
+		
+		if mouseDistance > DRAG_THRESHOLD then
+			dragActive = true
+			potentialDragStart = false
+		else
+			return false
+		end
+	end
+	
+	if not dragActive then
+		return false
+	end
+	
+	local altPressed, ctrlPressed, metaPressed, shiftPressed = Spring.GetModKeyState()
+	local _, worldPosition = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+	if not worldPosition then
+		return false
+	end
+	local buildFacing = Spring.GetBuildFacing()
+	local useBoxPlacement = altPressed and ctrlPressed and shiftPressed
+	local useGridPlacement = altPressed and not useBoxPlacement
+	dragPreviewPositions = computeDragPreviewPositions(selBuildQueueDefID, dragStartPosition, { worldPosition[1], worldPosition[2], worldPosition[3] }, buildFacing, useGridPlacement, useBoxPlacement)
+	return true
+end
+
+function widget:MouseRelease(mx, my, button)
+	if button == 1 and selBuildQueueDefID then
+		if dragActive then
+			local isMex = UnitDefs[selBuildQueueDefID] and UnitDefs[selBuildQueueDefID].extractsMetal > 0
+			for i = 1, #dragPreviewPositions do
+				local positionData = dragPreviewPositions[i]
+				local removedAny = false
+				for j = #buildQueue, 1, -1 do
+					local queued = buildQueue[j]
+					if queued[1] > 0 and DoBuildingsClash(positionData, queued) then
+						table.remove(buildQueue, j)
+						removedAny = true
+					end
+				end
+				if not removedAny then
+					if Spring.TestBuildOrder(positionData[1], positionData[2], positionData[3], positionData[4], positionData[5]) ~= 0 then
+						if isMex then
+							if WG.ExtractorSnap.position or metalMap then
+								buildQueue[#buildQueue + 1] = { positionData[1], positionData[2], positionData[3], positionData[4], positionData[5] }
+							end
+						else
+							buildQueue[#buildQueue + 1] = { positionData[1], positionData[2], positionData[3], positionData[4], positionData[5] }
+						end
+					end
+				end
+			end
+			handleBuildMenu(true)
+			clearDrag()
+			return true
+		elseif potentialDragStart then
+			local _, pos = Spring.TraceScreenRay(mx, my, true, false, false, isUnderwater(selBuildQueueDefID))
+			local isMex = UnitDefs[selBuildQueueDefID] and UnitDefs[selBuildQueueDefID].extractsMetal > 0
+			
+			if isMex and not metalMap then
+				clearDrag()
+				return false
+			end
+			
+			if isMex and not metalMap and WG.ExtractorSnap then
+				local snapPos = WG.ExtractorSnap.position
+				if snapPos then
+					pos = { snapPos.x, snapPos.y, snapPos.z }
+				end
+			end
+
+			if not pos then
+				clearDrag()
+				return false
+			end
+
+			local buildFacing = Spring.GetBuildFacing()
+			local bx, by, bz = Spring.Pos2BuildPos(selBuildQueueDefID, pos[1], pos[2], pos[3], buildFacing)
+			local buildData = { selBuildQueueDefID, bx, by, bz, buildFacing }
+			local cx, cy, cz = Spring.GetTeamStartPosition(myTeamID)
+
+			if cx ~= -100 then
+				local cbx, cby, cbz = Spring.Pos2BuildPos(tonumber(startDefID) or 0, cx or 0, cy or 0, cz or 0)
+				if DoBuildingsClash(buildData, { startDefID, cbx, cby, cbz, 1 }) then
+					clearDrag()
+					return true
+				end
+			end
+
+			if Spring.TestBuildOrder(selBuildQueueDefID, bx, by, bz, buildFacing) ~= 0 then
+				if isMex and not metalMap then
+					local spot = WG["resource_spot_finder"].GetClosestMexSpot(bx, bz)
+					local spotIsTaken = spot and WG["resource_spot_builder"].SpotHasExtractorQueued(spot, nil) or false
+					if not spot or spotIsTaken then
+						clearDrag()
+						return true
+					end
+				end
+
+				local anyClashes = false
+				for i = #buildQueue, 1, -1 do
+					if buildQueue[i][1] > 0 and DoBuildingsClash(buildData, buildQueue[i]) then
+						anyClashes = true
+						table.remove(buildQueue, i)
+					end
+				end
+
+				if not anyClashes then
+					buildQueue[#buildQueue + 1] = buildData
+					handleBuildMenu(true)
+				end
+			end
+			clearDrag()
+			return true
+		end
+	end
+	clearDrag()
+	return false
 end
 
 function widget:DrawWorld()
@@ -514,6 +965,7 @@ function widget:DrawWorld()
 	end
 
 	local alphaResults = { queueAlphas = {}, selectedAlpha = ALPHA_DEFAULT }
+	local spawnedQueueKeySet = {}
 	
 	local getBuildQueueSpawnStatus = WG["getBuildQueueSpawnStatus"]
 	if getBuildQueueSpawnStatus then
@@ -522,6 +974,11 @@ function widget:DrawWorld()
 		for i = 1, #buildQueue do
 			local isSpawned = spawnStatus.queueSpawned[i] or false
 			alphaResults.queueAlphas[i] = isSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
+			if isSpawned then
+				local bdi = buildQueue[i]
+				local kq = buildPositionKey(bdi[2], bdi[3], bdi[4], bdi[5])
+				spawnedQueueKeySet[kq] = true
+			end
 		end
 		
 		alphaResults.selectedAlpha = spawnStatus.selectedSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
@@ -531,7 +988,6 @@ function widget:DrawWorld()
 		end
 	end
 
-	-- Draw all the buildings
 	local queueLineVerts = startChosen and { { v = { sx, sy, sz } } } or {}
 	for b = 1, #buildQueue do
 		local buildData = buildQueue[b]
@@ -562,11 +1018,10 @@ function widget:DrawWorld()
 	gl.LineStipple(false)
 
 	-- Draw selected building
-	if selBuildData then
+	if selBuildData and not dragActive then
 		local selectedAlpha = alphaResults.selectedAlpha or ALPHA_DEFAULT
 		local isSelectedSpawned = selectedAlpha >= ALPHA_SPAWNED
 		
-		-- mmm, convoluted logic. Pregame handling is hell
 		local isMex = UnitDefs[selBuildQueueDefID] and UnitDefs[selBuildQueueDefID].extractsMetal > 0
 		local testOrder = spTestBuildOrder(
 			selBuildQueueDefID,
@@ -591,6 +1046,47 @@ function widget:DrawWorld()
 		end
 	end
 
+	if dragActive and selBuildQueueDefID and #dragPreviewPositions > 0 then
+		local hideKey = nil
+		if selBuildData then
+			hideKey = buildPositionKey(selBuildData[2], selBuildData[3], selBuildData[4], selBuildData[5])
+		end
+		
+		local dragSpawnedKeySet = {}
+		local getBuildQueueSpawnStatus = WG["getBuildQueueSpawnStatus"]
+		if getBuildQueueSpawnStatus then
+			local spawnStatus = getBuildQueueSpawnStatus(buildQueue, nil, dragPreviewPositions)
+			if spawnStatus and spawnStatus.dragSpawned then
+				for i = 1, #dragPreviewPositions do
+					if spawnStatus.dragSpawned[i] then
+						local positionData = dragPreviewPositions[i]
+						local posKey = buildPositionKey(positionData[2], positionData[3], positionData[4], positionData[5])
+						dragSpawnedKeySet[posKey] = true
+					end
+				end
+			end
+		else
+		end
+		
+		for i = 1, #dragPreviewPositions do
+			local positionData = dragPreviewPositions[i]
+			local posKey = buildPositionKey(positionData[2], positionData[3], positionData[4], positionData[5])
+			if posKey ~= hideKey then
+				local canBuild = spTestBuildOrder(positionData[1], positionData[2], positionData[3], positionData[4], positionData[5]) ~= 0
+				local isSpawned = dragSpawnedKeySet[posKey] == true
+				local color
+				if canBuild then
+					color = isSpawned and BORDER_COLOR_SPAWNED or BORDER_COLOR_VALID
+				else
+					color = BORDER_COLOR_INVALID
+				end
+				
+				
+				DrawBuilding(positionData, color, false, isSpawned and ALPHA_SPAWNED or DRAG_PREVIEW_ALPHA)
+			end
+		end
+	end
+
 	-- Reset gl
 	gl.Color(1, 1, 1, 1)
 	gl.LineWidth(1.0)
@@ -605,7 +1101,7 @@ function widget:GameFrame(n)
 	end
 
 	-- handle the pregame build queue
-	if not (n <= 90 and n > 1) then
+	if not (n <= 60 and n > 1) then
 		return
 	end
 
@@ -706,6 +1202,7 @@ function widget:GetConfigData()
 	return {
 		buildQueue = buildQueue,
 		gameID = Game.gameID and Game.gameID or Spring.GetGameRulesParam("GameID"),
+		buildSpacing = Spring.GetBuildSpacing() or 0,
 	}
 end
 
@@ -717,5 +1214,9 @@ function widget:SetConfigData(data)
 		and data.gameID == (Game.gameID and Game.gameID or Spring.GetGameRulesParam("GameID"))
 	then
 		buildQueue = data.buildQueue
+	end
+	
+	if data.buildSpacing and Spring.GetGameFrame() == 0 then
+		Spring.SetBuildSpacing(data.buildSpacing)
 	end
 end
