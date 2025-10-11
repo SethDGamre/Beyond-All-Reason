@@ -185,6 +185,10 @@ local function computeProjectedUsage()
 	local pregame = WG and WG["pregame-build"] and WG["pregame-build"].getBuildQueue and
 		WG["pregame-build"].getBuildQueue() or {}
 	local pregameUnitSelected = WG["pregame-unit-selected"] or -1
+	local dragPreviewPositions = WG and WG["pregame-build"] and WG["pregame-build"].getDragPreviewPositions and
+		WG["pregame-build"].getDragPreviewPositions() or {}
+	local isDragActive = WG and WG["pregame-build"] and WG["pregame-build"].isDragActive and
+		WG["pregame-build"].isDragActive() or false
 
 	local budgetUsed = 0
 	local firstFactoryPlaced = false
@@ -208,7 +212,23 @@ local function computeProjectedUsage()
 	end
 
 	local budgetProjected = 0
-	if pregameUnitSelected > 0 and UnitDefs[pregameUnitSelected] then
+	
+	if isDragActive and dragPreviewPositions and #dragPreviewPositions > 0 then
+		for i = 1, #dragPreviewPositions do
+			local positionData = dragPreviewPositions[i]
+			local defID = positionData[1]
+			local buildX, buildZ = positionData[2], positionData[4]
+			
+			if isWithinBuildRange(commanderX, commanderZ, buildX, buildZ, gameRules.instantBuildRange) then
+				local budgetCost = calculateBudgetForItem(defID, gameRules, shouldApplyFactoryDiscount, not firstFactoryPlaced)
+				budgetProjected = budgetProjected + budgetCost
+				
+				if UnitDefs[defID] and UnitDefs[defID].isFactory and not firstFactoryPlaced then
+					firstFactoryPlaced = true
+				end
+			end
+		end
+		elseif pregameUnitSelected > 0 and UnitDefs[pregameUnitSelected] then
 		local uDef = UnitDefs[pregameUnitSelected]
 		local mx, my = Spring.GetMouseState()
 		
@@ -327,17 +347,25 @@ local function updateDataModel(forceUpdate)
 end
 
 
-local function getBuildQueueSpawnStatus(buildQueue, selectedBuildData)
+local function getBuildQueueSpawnStatus(buildQueue, selectedBuildData, dragPreviewPositions)
 	local myTeamID = spGetMyTeamID() or 0
 	local gameRules = getCachedGameRules(myTeamID)
 	local spawnResults = {
 		queueSpawned = {},
-		selectedSpawned = false
+		selectedSpawned = false,
+		dragSpawned = {}
 	}
 	
 	local remainingBudget = gameRules.budgetTotal
 	local firstFactoryPlaced = false
 	local commanderX, commanderY, commanderZ = getCommanderPosition(myTeamID)
+	
+	if not dragPreviewPositions then
+		dragPreviewPositions = WG and WG["pregame-build"] and WG["pregame-build"].getDragPreviewPositions and
+			WG["pregame-build"].getDragPreviewPositions() or {}
+	end
+	local isDragActive = WG and WG["pregame-build"] and WG["pregame-build"].isDragActive and
+		WG["pregame-build"].isDragActive() or false
 	
 	if buildQueue and #buildQueue > 0 then
 		for i = 1, #buildQueue do
@@ -365,7 +393,34 @@ local function getBuildQueueSpawnStatus(buildQueue, selectedBuildData)
 			spawnResults.queueSpawned[i] = isSpawned
 		end
 	end
-	if selectedBuildData and selectedBuildData[1] and selectedBuildData[1] > 0 then
+	
+	if isDragActive and dragPreviewPositions and #dragPreviewPositions > 0 then
+		local dragPreviewCost = 0
+		for i = 1, #dragPreviewPositions do
+			local positionData = dragPreviewPositions[i]
+			local unitDefID = positionData[1]
+			local buildX, buildZ = positionData[2], positionData[4]
+			local isSpawned = false
+			
+			if isWithinBuildRange(commanderX, commanderZ, buildX, buildZ, gameRules.instantBuildRange) then
+				local budgetCost = calculateBudgetForItem(unitDefID, gameRules, shouldApplyFactoryDiscount, not firstFactoryPlaced)
+				
+				if remainingBudget >= budgetCost then
+					isSpawned = true
+					remainingBudget = remainingBudget - budgetCost
+					dragPreviewCost = dragPreviewCost + budgetCost
+					
+					if UnitDefs[unitDefID] and UnitDefs[unitDefID].isFactory and not firstFactoryPlaced then
+						firstFactoryPlaced = true
+					end
+				end
+			end
+			
+			spawnResults.dragSpawned[i] = isSpawned
+		end
+		
+		spawnResults.selectedSpawned = remainingBudget >= dragPreviewCost
+	elseif selectedBuildData and selectedBuildData[1] and selectedBuildData[1] > 0 then
 		local unitDefID = selectedBuildData[1]
 		local buildX, buildZ = selectedBuildData[2], selectedBuildData[4]
 		
