@@ -98,6 +98,17 @@ local function isUnderwater(unitDefID)
 	return def and def.modCategories and def.modCategories.underwater or false
 end
 
+local buildQueue = {}
+local selBuildQueueDefID
+local facingMap = { south = 0, east = 1, north = 2, west = 3 }
+
+local isSpec = spGetSpectatingState()
+local myTeamID = spGetMyTeamID()
+local preGamestartPlayer = spGetGameFrame() == 0 and not isSpec
+local startDefID = spGetTeamRulesParam(myTeamID, "startUnit")
+local prevStartDefID = startDefID
+local metalMap = false
+
 local function getUnitCanCompleteQueue(unitID)
 	local unitDefID = spGetUnitDefID(unitID)
 	if startDefID and unitDefID == startDefID then
@@ -115,17 +126,6 @@ local function getUnitCanCompleteQueue(unitID)
 	end
 	return true
 end
-
-local buildQueue = {}
-local selBuildQueueDefID
-local facingMap = { south = 0, east = 1, north = 2, west = 3 }
-
-local isSpec = spGetSpectatingState()
-local myTeamID = spGetMyTeamID()
-local preGamestartPlayer = spGetGameFrame() == 0 and not isSpec
-local startDefID = spGetTeamRulesParam(myTeamID, "startUnit")
-local prevStartDefID = startDefID
-local metalMap = false
 
 local unitshapes = {}
 
@@ -613,17 +613,6 @@ local function DrawBuilding(buildData, borderColor, drawRanges, alpha)
 			gl.Shape(GL.LINE_LOOP, translatedCircle)
 		end
 
-		local wRange = false --unitMaxWeaponRange[bDefID]
-		if wRange then
-			gl.Color(1.0, 0.3, 0.3, 0.7)
-			local circleVertices = getCircleVertices(wRange, 40)
-			local translatedCircle = {}
-			for i = 1, #circleVertices do
-				local v = circleVertices[i].v
-				translatedCircle[i] = { v = { bx + v[1], by + v[2], bz + v[3] } }
-			end
-			gl.Shape(GL.LINE_LOOP, translatedCircle)
-		end
 	end
 	if WG.StopDrawUnitShapeGL4 then
 		local id = buildData[1]
@@ -1062,7 +1051,6 @@ function widget:DrawWorld()
 	local getBuildQueueSpawnStatus = WG.getBuildQueueSpawnStatus
 
 	local alphaResults = { queueAlphas = {}, selectedAlpha = ALPHA_DEFAULT }
-	local spawnedQueueKeySet = {}
 
 	if getBuildQueueSpawnStatus then
 		local spawnStatus = getBuildQueueSpawnStatus(buildQueue, selBuildData)
@@ -1070,11 +1058,6 @@ function widget:DrawWorld()
 		for i = 1, #buildQueue do
 			local isSpawned = spawnStatus.queueSpawned[i] or false
 			alphaResults.queueAlphas[i] = isSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
-			if isSpawned then
-				local bdi = buildQueue[i]
-				local kq = buildPositionKey(bdi[2], bdi[3], bdi[4], bdi[5])
-				spawnedQueueKeySet[kq] = true
-			end
 		end
 
 		alphaResults.selectedAlpha = spawnStatus.selectedSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
