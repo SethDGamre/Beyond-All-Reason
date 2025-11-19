@@ -3,6 +3,55 @@ local widget = widget ---@type Widget
 -- Include the substitution logic directly with a shorter alias
 local SubLogic = VFS.Include("luaui/Include/blueprint_substitution/logic.lua")
 
+-- Include commander range utility
+local CommanderRangeUtils = VFS.Include("common/commander_range_utils.lua")
+
+local function getCommanderCircles()
+	local circles = {}
+	local myTeamID = Spring.GetMyTeamID()
+	local myCircleIndex = nil
+
+	local teams = Spring.GetTeamList()
+	for i, teamID in ipairs(teams) do
+		local x, y, z = Spring.GetTeamStartPosition(teamID)
+		if x ~= -100 then
+			local startDefID = Spring.GetTeamRulesParam(teamID, "startUnit")
+			if startDefID and UnitDefs[startDefID] then
+				local buildDistance = Spring.GetGameRulesParam("overridePregameBuildDistance") or UnitDefs[startDefID].buildDistance
+				if buildDistance then
+					local circleIndex = #circles + 1
+					circles[circleIndex] = {
+						x = x,
+						z = z,
+						radius = buildDistance
+					}
+					if teamID == myTeamID then
+						myCircleIndex = circleIndex
+					end
+				end
+			end
+		end
+	end
+
+	-- ============================================================================
+	-- DEBUGGING CODE - REMOVE BEFORE RELEASE
+	-- ============================================================================
+	-- Add virtual commanders to circles list
+	local virtualCommanders = CommanderRangeUtils.getVirtualCommanders()
+	for _, vCommander in ipairs(virtualCommanders) do
+		circles[#circles + 1] = {
+			x = vCommander.x,
+			z = vCommander.z,
+			radius = vCommander.radius
+		}
+	end
+	-- ============================================================================
+	-- END DEBUGGING CODE
+	-- ============================================================================
+
+	return circles, myCircleIndex
+end
+
 function widget:GetInfo()
 	return {
 		name = "Pregame Queue",
@@ -696,6 +745,7 @@ function widget:Update(dt)
 					end
 				end
 
+
 				if not hasConflicts then
 					tableInsert(newBuildQueue, buildDataPos)
 				end
@@ -848,6 +898,7 @@ function widget:MousePress(mx, my, button)
 						end
 					end
 
+
 					if not hasConflicts then
 						tableInsert(newBuildQueue, buildDataPos)
 					end
@@ -934,6 +985,7 @@ function widget:MousePress(mx, my, button)
 				end
 			end
 
+
 			if not hasConflicts then
 				if meta then
 					tableInsert(buildQueue, 1, buildData)
@@ -985,6 +1037,64 @@ function widget:MousePress(mx, my, button)
 		return true
 	end
 end
+
+-- ============================================================================
+-- DEBUGGING CODE - REMOVE BEFORE RELEASE
+-- ============================================================================
+local pKeyHeld = false
+
+function widget:KeyPress(key, mods, isRepeat)
+	if not preGamestartPlayer then
+		return false
+	end
+
+	-- Handle P key for virtual commander debugging
+	local pKey = 112 -- 'p' key
+	if key == pKey then
+		pKeyHeld = true
+		return false -- Don't consume the P key
+	end
+
+	-- Handle virtual commander placement when P is held
+	if pKeyHeld then
+		-- Handle P + number (0-9) for virtual commanders
+		if key >= 48 and key <= 57 then -- 0-9 keys
+			local number = key - 48 -- Convert ASCII to number
+
+			-- Get mouse position
+			local mx, my = spGetMouseState()
+			local _, pos = spTraceScreenRay(mx, my, true, false, false, false)
+			if pos then
+				local x, y, z = pos[1], pos[2], pos[3]
+				local radius = Spring.GetGameRulesParam("overridePregameBuildDistance") or 384 -- Default build distance
+
+				CommanderRangeUtils.addVirtualCommander(x, z, radius)
+				spEcho(string.format("Added virtual commander %d at position (%.0f, %.0f)", number, x, z))
+				pKeyHeld = false -- Reset P key state
+				return true
+			end
+		end
+
+		-- Handle P + ` (backtick) to clear virtual commanders
+		if key == 96 then -- ` key (backtick)
+			CommanderRangeUtils.clearVirtualCommanders()
+			spEcho("Cleared all virtual commanders")
+			pKeyHeld = false -- Reset P key state
+			return true
+		end
+	end
+
+	return false
+end
+
+function widget:KeyRelease(key)
+	if key == 112 then -- 'p' key released
+		pKeyHeld = false
+	end
+end
+-- ============================================================================
+-- END DEBUGGING CODE
+-- ============================================================================
 
 local function hasCacheExpired(currentStartPos, currentSelBuildData)
 	local startPosChanged = not cachedStartPosition or
@@ -1073,14 +1183,81 @@ function widget:DrawWorld()
 	--TODO: be based on the map, if position is changed from default(?)
 	local startChosen = (sx ~= 0) or (sy ~=0) or (sz~=0)
 	if startChosen and startDefID then
-		-- Correction for start positions in the air
-		sy = spGetGroundHeight(sx, sz)
+		-- Get circles and no-go lines
+		local circles, myCircleIndex = getCommanderCircles()
+		if myCircleIndex and #circles > 1 then
+			local noGoLines = CommanderRangeUtils.getNoGoLines(circles, myCircleIndex)
 
-		-- Draw start units build radius
-		gl.Color(BUILD_DISTANCE_COLOR)
-		local buildDistance = Spring.GetGameRulesParam("overridePregameBuildDistance") or UnitDefs[startDefID].buildDistance
-		if buildDistance then
-			gl.DrawGroundCircle(sx, sy, sz, buildDistance, 40)
+			-- Draw player's build radius
+			gl.Color(BUILD_DISTANCE_COLOR)
+			local buildDistance = Spring.GetGameRulesParam("overridePregameBuildDistance") or UnitDefs[startDefID].buildDistance
+			if buildDistance then
+				gl.DrawGroundCircle(sx, sy, sz, buildDistance, 40)
+			end
+
+			-- ============================================================================
+			-- DEBUGGING CODE - REMOVE BEFORE RELEASE
+			-- ============================================================================
+			-- Draw virtual commanders (yellow circles with orange centers)
+			local virtualCommanders = CommanderRangeUtils.getVirtualCommanders()
+			for _, vCommander in ipairs(virtualCommanders) do
+				gl.Color(1.0, 1.0, 0.0, 0.4) -- Yellow color for virtual commanders
+				gl.DrawGroundCircle(vCommander.x, spGetGroundHeight(vCommander.x, vCommander.z), vCommander.z, vCommander.radius, 40)
+				-- Draw a small indicator circle at the center
+				gl.Color(1.0, 0.5, 0.0, 0.8) -- Orange center dot
+				gl.DrawGroundCircle(vCommander.x, spGetGroundHeight(vCommander.x, vCommander.z), vCommander.z, 20, 20)
+			end
+			-- ============================================================================
+			-- END DEBUGGING CODE
+			-- ============================================================================
+
+			-- Draw red boundary lines
+			gl.Color(1.0, 0.0, 0.0, 1.0)
+			gl.LineWidth(2.0)
+
+			for _, line in ipairs(noGoLines) do
+				local elevation = 10
+				local lineLength = line.intersectionWidth or 900 -- Use intersection width, fallback to 900
+
+				local startX = line.centerX - line.perpX * (lineLength / 2)
+				local startZ = line.centerZ - line.perpZ * (lineLength / 2)
+				local endX = line.centerX + line.perpX * (lineLength / 2)
+				local endZ = line.centerZ + line.perpZ * (lineLength / 2)
+
+				local groundHeight1 = spGetGroundHeight(startX, startZ) + elevation
+				local groundHeight2 = spGetGroundHeight(endX, endZ) + elevation
+
+				gl.BeginEnd(GL.LINES, function()
+					gl.Vertex(startX, groundHeight1, startZ)
+					gl.Vertex(endX, groundHeight2, endZ)
+				end)
+			end
+
+			gl.LineWidth(1.0)
+			gl.Color(1, 1, 1, 1)
+		else
+			-- Draw player's build radius (no intersections)
+			gl.Color(BUILD_DISTANCE_COLOR)
+			local buildDistance = Spring.GetGameRulesParam("overridePregameBuildDistance") or UnitDefs[startDefID].buildDistance
+			if buildDistance then
+				gl.DrawGroundCircle(sx, sy, sz, buildDistance, 40)
+			end
+
+			-- ============================================================================
+			-- DEBUGGING CODE - REMOVE BEFORE RELEASE
+			-- ============================================================================
+			-- Draw virtual commanders (yellow circles with orange centers)
+			local virtualCommanders = CommanderRangeUtils.getVirtualCommanders()
+			for _, vCommander in ipairs(virtualCommanders) do
+				gl.Color(1.0, 1.0, 0.0, 0.4) -- Yellow color for virtual commanders
+				gl.DrawGroundCircle(vCommander.x, spGetGroundHeight(vCommander.x, vCommander.z), vCommander.z, vCommander.radius, 40)
+				-- Draw a small indicator circle at the center
+				gl.Color(1.0, 0.5, 0.0, 0.8) -- Orange center dot
+				gl.DrawGroundCircle(vCommander.x, spGetGroundHeight(vCommander.x, vCommander.z), vCommander.z, 20, 20)
+			end
+			-- ============================================================================
+			-- END DEBUGGING CODE
+			-- ============================================================================
 		end
 	end
 
@@ -1118,12 +1295,41 @@ function widget:DrawWorld()
 		if getBuildQueueSpawnStatus then
 			local spawnStatus = getBuildQueueSpawnStatus(buildQueue, selBuildData)
 
-			for i = 1, #buildQueue do
-				local isSpawned = spawnStatus.queueSpawned[i] or false
-				alphaResults.queueAlphas[i] = isSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
+			-- Get circles and no-go lines for boundary checking
+			local circles, myCircleIndex = getCommanderCircles()
+			local noGoLines = {}
+			local buildRadius = 0
+			local buildCenterX, buildCenterZ = sx, sz
+
+			if myCircleIndex and #circles > 1 then
+				noGoLines = CommanderRangeUtils.getNoGoLines(circles, myCircleIndex)
+				local myCircle = circles[myCircleIndex]
+				buildRadius = myCircle.radius
+				buildCenterX = myCircle.x
+				buildCenterZ = myCircle.z
 			end
 
-			alphaResults.selectedAlpha = spawnStatus.selectedSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
+			for i = 1, #buildQueue do
+				local isSpawned = spawnStatus.queueSpawned[i] or false
+				local buildData = buildQueue[i]
+
+				-- Check if building can be quickstart spawned (includes boundary checking)
+				local canQuickstart = true
+				if buildData[1] > 0 and myCircleIndex then
+					canQuickstart = CommanderRangeUtils.isPointInBuildRange(buildData[2], buildData[4], buildRadius, buildCenterX, buildCenterZ, noGoLines)
+				end
+
+				-- Building can be quickstart-spawned only if both the original logic allows it AND it's within boundaries
+				local finalIsSpawned = isSpawned and canQuickstart
+				alphaResults.queueAlphas[i] = finalIsSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
+			end
+
+			-- Also check selected building if it exists
+			local selectedCanQuickstart = true
+			if selBuildData and myCircleIndex then
+				selectedCanQuickstart = CommanderRangeUtils.isPointInBuildRange(selBuildData[2], selBuildData[4], buildRadius, buildCenterX, buildCenterZ, noGoLines)
+			end
+			alphaResults.selectedAlpha = (spawnStatus.selectedSpawned and selectedCanQuickstart) and ALPHA_SPAWNED or ALPHA_DEFAULT
 		end
 
 		cachedAlphaResults = alphaResults
@@ -1270,8 +1476,33 @@ function widget:DrawWorld()
 
 			if validPreviewCount > 0 then
 				local spawnStatus = getBuildQueueSpawnStatus(tempQueue, nil)
+
+				-- Get circles and no-go lines for boundary checking
+				local circles, myCircleIndex = getCommanderCircles()
+				local noGoLines = {}
+				local buildRadius = 0
+				local buildCenterX, buildCenterZ = sx, sz
+
+				if myCircleIndex and #circles > 1 then
+					noGoLines = CommanderRangeUtils.getNoGoLines(circles, myCircleIndex)
+					local myCircle = circles[myCircleIndex]
+					buildRadius = myCircle.radius
+					buildCenterX = myCircle.x
+					buildCenterZ = myCircle.z
+				end
+
 				for i = #buildQueue + 1, #tempQueue do
-					previewSpawnStatus[i - #buildQueue] = spawnStatus.queueSpawned[i] or false
+					local isSpawned = spawnStatus.queueSpawned[i] or false
+					local buildData = tempQueue[i]
+
+					-- Check if preview building can be quickstart spawned (includes boundary checking)
+					local canQuickstart = true
+					if myCircleIndex then
+						canQuickstart = CommanderRangeUtils.isPointInBuildRange(buildData[2], buildData[4], buildRadius, buildCenterX, buildCenterZ, noGoLines)
+					end
+
+					-- Preview building can be quickstart-spawned only if both the original logic allows it AND it's within boundaries
+					previewSpawnStatus[i - #buildQueue] = isSpawned and canQuickstart
 				end
 			end
 		end
@@ -1357,7 +1588,29 @@ function widget:DrawWorld()
 		local getBuildQueueSpawnStatus = WG["getBuildQueueSpawnStatus"]
 		if getBuildQueueSpawnStatus and testOrder then
 			local spawnStatus = getBuildQueueSpawnStatus(buildQueue, selBuildData)
-			isSelectedSpawned = spawnStatus.selectedSpawned or false
+			local baseSpawned = spawnStatus.selectedSpawned or false
+
+			-- Check if selected building can be quickstart spawned (includes boundary checking)
+			local circles, myCircleIndex = getCommanderCircles()
+			local canQuickstart = true
+			if myCircleIndex then
+				local noGoLines = {}
+				local buildRadius = 0
+				local buildCenterX, buildCenterZ = sx, sz
+
+				if #circles > 1 then
+					noGoLines = CommanderRangeUtils.getNoGoLines(circles, myCircleIndex)
+					local myCircle = circles[myCircleIndex]
+					buildRadius = myCircle.radius
+					buildCenterX = myCircle.x
+					buildCenterZ = myCircle.z
+				end
+
+				canQuickstart = CommanderRangeUtils.isPointInBuildRange(selBuildData[2], selBuildData[4], buildRadius, buildCenterX, buildCenterZ, noGoLines)
+			end
+
+			-- Selected building can be quickstart-spawned only if both the original logic allows it AND it's within boundaries
+			isSelectedSpawned = baseSpawned and canQuickstart
 			selectedAlpha = isSelectedSpawned and ALPHA_SPAWNED or ALPHA_DEFAULT
 		end
 		

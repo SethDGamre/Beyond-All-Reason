@@ -879,7 +879,50 @@ function gadget:UnitCreated(unitID, unitDefID, unitTeam, builderID)
 	end
 end
 
+local function scrambleStartPositions()
+	-- Only run in debug mode
+	if not Spring.Utilities.IsDevMode() and not Spring.Utilities.ShowDevUI() then
+		return
+	end
+
+	Spring.Echo("[Quick Start] Scrambling start positions for debug mode...")
+
+	-- Get all ally teams and their start boxes
+	local allyTeams = Spring.GetAllyTeamList()
+	for _, allyTeamID in ipairs(allyTeams) do
+		local xn, zn, xp, zp = Spring.GetAllyTeamStartBox(allyTeamID)
+		if xn and zn and xp and zp then
+			-- Get all teams in this ally team
+			local teams = Spring.GetTeamList()
+			local allyTeamTeams = {}
+			for _, teamID in ipairs(teams) do
+				local teamAllyTeamID = select(6, Spring.GetTeamInfo(teamID, false))
+				if teamAllyTeamID == allyTeamID then
+					table.insert(allyTeamTeams, teamID)
+				end
+			end
+
+			-- Scramble positions for teams in this ally team
+			for _, teamID in ipairs(allyTeamTeams) do
+				-- Generate random position within the start box
+				local randomX = xn + math.random() * (xp - xn)
+				local randomZ = zn + math.random() * (zp - zn)
+				local groundY = Spring.GetGroundHeight(randomX, randomZ)
+
+				-- Set the scrambled start position
+				Spring.SetTeamStartPosition(teamID, randomX, groundY, randomZ)
+				Spring.Echo(string.format("[Quick Start] Team %d scrambled to position (%.0f, %.0f)", teamID, randomX, randomZ))
+			end
+		end
+	end
+
+	Spring.Echo("[Quick Start] Start position scrambling complete!")
+end
+
 function gadget:Initialize()
+	-- Scramble start positions if in debug mode
+	scrambleStartPositions()
+
 	local minWind = Game.windMin
 	local maxWind = Game.windMax
 	for _, teamID in ipairs(Spring.GetTeamList()) do
