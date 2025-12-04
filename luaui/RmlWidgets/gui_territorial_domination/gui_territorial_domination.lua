@@ -39,6 +39,7 @@ local ColorString = Spring.Utilities.Color.ToString
 local DEFAULT_MAX_ROUNDS = 7
 local DEFAULT_POINTS_CAP = 100
 local DEFAULT_COLOR_VALUE = 0.5
+local FALLBACK_RANK = 999
 
 local SECONDS_PER_MINUTE = 60
 local COUNTDOWN_ALERT_THRESHOLD = 60
@@ -53,8 +54,7 @@ local KEY_ESCAPE = 27
 local AESTHETIC_POINTS_MULTIPLIER = 2 -- because bigger number feels good, and to help destinguish points from territory counts in round 1.
 
 local DEFAULT_PANEL_HEIGHT = 240
-local LEADERBOARD_GAP_BASE = 50
-local LEADERBOARD_GAP_SPECTATOR = 25
+local LEADERBOARD_GAP_BASE = 75
 
 local COLOR_BACKGROUND_ALPHA = 35
 local COLOR_BYTE_MAX = 255
@@ -95,6 +95,7 @@ local widgetState = {
 	cachedPlayerNames = {},
 	cachedTeamColors = {},
 	knownAllyTeamIDs = {},
+	lastWasInLead = false,
 	hasCachedInitialNames = false,
 	hasValidAdvPlayerListPosition = false,
 }
@@ -392,7 +393,7 @@ local function updateLeaderboard()
 		teamsContainer:AppendChild(row)
 	end
 	
-	if eliminationThreshold > 0 then
+	if eliminationThreshold > 0 and dataModel and not dataModel.isFinalRound then
 		separatorTextElement.inner_rml = spI18N('ui.territorialDomination.elimination.threshold', { threshold = eliminationThreshold })
 		separatorElement:SetClass("hidden", false)
 	else
@@ -459,14 +460,28 @@ local function calculateUILayout()
 	if not tdRootElement then return end
 
 	local advPlayerListAPI = WG['advplayerlist_api']
-	if not advPlayerListAPI or not advPlayerListAPI.GetPosition then
+	local topElement = nil
+
+	if WG['playertv'] and WG['playertv'].GetPosition and (WG['playertv'].isActive == nil or WG['playertv'].isActive()) then
+		topElement = WG['playertv']
+	elseif WG['displayinfo'] and WG['displayinfo'].GetPosition then
+		topElement = WG['displayinfo']
+	elseif WG['unittotals'] and WG['unittotals'].GetPosition then
+		topElement = WG['unittotals']
+	elseif WG['music'] and WG['music'].GetPosition then
+		topElement = WG['music']
+	elseif advPlayerListAPI and advPlayerListAPI.GetPosition then
+		topElement = advPlayerListAPI
+	end
+
+	if not topElement then
 		widgetState.hasValidAdvPlayerListPosition = false
 		checkDocumentVisibility()
 		return
 	end
 
-	local apiAbsPosition = advPlayerListAPI.GetPosition()
-	if not apiAbsPosition or #apiAbsPosition < 4 then
+	local apiAbsPosition = topElement.GetPosition()
+	if not apiAbsPosition then
 		widgetState.hasValidAdvPlayerListPosition = false
 		checkDocumentVisibility()
 		return
@@ -479,17 +494,10 @@ local function calculateUILayout()
 		return
 	end
 
-	local GL_BASE_WIDTH = 1920
-	local GL_BASE_HEIGHT = 1080
-	local scaleX = screenWidth / GL_BASE_WIDTH
-	local scaleY = screenHeight / GL_BASE_HEIGHT
-
 	local leaderboardTop = apiAbsPosition[1]
-	local gap = (LEADERBOARD_GAP_BASE + (spGetSpectatingState() and LEADERBOARD_GAP_SPECTATOR or 0)) * scaleY
-	local panelHeight = tdRootElement.offset_height or DEFAULT_PANEL_HEIGHT
 
-	local leaderboardTopCss = screenHeight - leaderboardTop
-	local desiredBottomCss = leaderboardTopCss - gap
+	local anchorTopCss = screenHeight - leaderboardTop
+	local desiredBottomCss = anchorTopCss
 
 	if desiredBottomCss >= 0 and desiredBottomCss < screenHeight then
 		local topVh = (desiredBottomCss / screenHeight) * 100
@@ -557,6 +565,10 @@ local function showRoundEndPopup(roundNumber, isFinalRound)
 	local eliminationInfoElement = widgetState.document:GetElementById("popup-elimination-info")
 	if not popupElement or not popupTextElement or not territoryInfoElement or not eliminationInfoElement then return end
 
+	local dataModel = widgetState.dmHandle
+	local maxRounds = (dataModel and dataModel.maxRounds) or DEFAULT_MAX_ROUNDS
+	local isOvertime = (dataModel and dataModel.isOvertime) or false
+
 	local popupText = ""
 	if isFinalRound then
 		if isTie() then
@@ -569,7 +581,6 @@ local function showRoundEndPopup(roundNumber, isFinalRound)
 			popupText = spI18N('ui.territorialDomination.roundOverPopup.defeat')
 		end
 	elseif roundNumber > 0 then
-		local maxRounds = (widgetState.dmHandle and widgetState.dmHandle.maxRounds) or DEFAULT_MAX_ROUNDS
 		if roundNumber == maxRounds then
 			popupText = spI18N('ui.territorialDomination.roundOverPopup.finalRound')
 		else
@@ -579,16 +590,20 @@ local function showRoundEndPopup(roundNumber, isFinalRound)
 
 	popupTextElement.inner_rml = popupText
 
-	local dataModel = widgetState.dmHandle
-	local pointsPerTerritory = (dataModel and dataModel.pointsPerTerritory) or 0
-	local eliminationThreshold = (dataModel and dataModel.eliminationThreshold) or 0
-
-	territoryInfoElement.inner_rml = spI18N('ui.territorialDomination.roundOverPopup.territoryWorth', { points = pointsPerTerritory })
-
-	if eliminationThreshold > 0 and not isFinalRound then
-		eliminationInfoElement.inner_rml = spI18N('ui.territorialDomination.roundOverPopup.eliminationBelow', { threshold = eliminationThreshold })
-	else
+	if isFinalRound then
+		territoryInfoElement.inner_rml = ""
 		eliminationInfoElement.inner_rml = ""
+	else
+		local pointsPerTerritory = (dataModel and dataModel.pointsPerTerritory) or 0
+		local eliminationThreshold = (dataModel and dataModel.eliminationThreshold) or 0
+
+		territoryInfoElement.inner_rml = spI18N('ui.territorialDomination.roundOverPopup.territoryWorth', { points = pointsPerTerritory })
+
+		if eliminationThreshold > 0 and not isFinalRound then
+			eliminationInfoElement.inner_rml = spI18N('ui.territorialDomination.roundOverPopup.eliminationBelow', { threshold = eliminationThreshold })
+		else
+			eliminationInfoElement.inner_rml = ""
+		end
 	end
 
 	popupElement.class_name = "popup-round-end visible"
@@ -717,12 +732,7 @@ local function updateAllyTeamData()
 	end
 
 	table.sort(validAllyTeams, function(a, b)
-		local aRankingScore = (a.score or 0) + (a.projectedPoints or 0)
-		local bRankingScore = (b.score or 0) + (b.projectedPoints or 0)
-		if aRankingScore ~= bRankingScore then
-			return aRankingScore > bRankingScore
-		end
-		return a.allyTeamID < b.allyTeamID
+		return (a.rank or FALLBACK_RANK) < (b.rank or FALLBACK_RANK)
 	end)
 
 
@@ -756,18 +766,20 @@ local function updateRoundInfo()
 		if timeRemainingSeconds < 1 then timeString = TIME_ZERO_STRING end
 	end
 
-	isCountdownWarning = (currentRound > maxRounds) or (timeRemainingSeconds <= COUNTDOWN_ALERT_THRESHOLD)
+	local isOvertime = currentRound > maxRounds
+	isCountdownWarning = isOvertime or (timeRemainingSeconds <= COUNTDOWN_ALERT_THRESHOLD)
+
+	local isOvertime = currentRound > maxRounds
+	local isFinalRound = currentRound >= maxRounds and timeRemainingSeconds <= 0
 
 	local roundDisplayText
-	if currentRound > maxRounds then
+	if isOvertime then
 		roundDisplayText = spI18N('ui.territorialDomination.round.displayMax', { maxRounds = maxRounds })
 	elseif currentRound == 0 then
 		roundDisplayText = spI18N('ui.territorialDomination.round.displayDefault', { maxRounds = maxRounds })
 	else
 		roundDisplayText = spI18N('ui.territorialDomination.round.displayWithMax', { currentRound = currentRound, maxRounds = maxRounds })
 	end
-
-	local isFinalRound = currentRound >= maxRounds and timeRemainingSeconds <= 0
 
 	return {
 		currentRound = currentRound,
@@ -780,6 +792,7 @@ local function updateRoundInfo()
 		timeRemainingSeconds = timeRemainingSeconds,
 		isCountdownWarning = isCountdownWarning,
 		isFinalRound = isFinalRound,
+		isOvertime = isOvertime,
 	}
 end
 
@@ -797,11 +810,9 @@ local function updateHeaderVisibility()
 	if roundDisplayText ~= "" then
 		hasRoundInfo = true
 	end
-	local currentRoundParam = spGetGameRulesParam("territorialDominationCurrentRound") or 0
-	local maxRoundsParam = (widgetState.dmHandle and widgetState.dmHandle.maxRounds) or DEFAULT_MAX_ROUNDS
-	local inOvertime = currentRoundParam > maxRoundsParam
 	local timeSecs = (dataModel and dataModel.timeRemainingSeconds) or 0
-	local hasTimeInfo = timeElement.inner_rml and (timeSecs > 0 or inOvertime)
+	local isOvertime = (dataModel and dataModel.isOvertime) or false
+	local hasTimeInfo = timeElement.inner_rml and (timeSecs > 0 or isOvertime)
 
 	headerElement:SetClass("hidden", not (hasRoundInfo or hasTimeInfo))
 	roundElement:SetClass("hidden", not hasRoundInfo)
@@ -962,6 +973,21 @@ local function updatePlayerDisplay()
 			currentScoreElement:SetClass("warning", false)
 			currentScoreElement:SetClass("pulsing", false)
 		end
+	end
+
+	local isNowInLead = isPlayerInFirstPlace()
+
+	if isNowInLead ~= widgetState.lastWasInLead then
+		if isNowInLead then
+			if WG['notifications'] and WG['notifications'].addEvent then
+				WG['notifications'].addEvent('GainedLead', false)
+			end
+		else
+			if WG['notifications'] and WG['notifications'].addEvent then
+				WG['notifications'].addEvent('LostLead', false)
+			end
+		end
+		widgetState.lastWasInLead = isNowInLead
 	end
 end
 
