@@ -101,9 +101,10 @@ for udid, udef in pairs(UnitDefs) do
 	local radar = isMobile and isUtil and udef.radarDistance > 0
 	local jammer = isMobile and isUtil and udef.radarDistanceJam > 0
 
-	if string.find(udef.name, 'armspid') or string.find(udef.name, 'leginfestor') then
+	if udef.customParams.selectable_as_combat_unit then
 		builder = false
 	end
+
 	combatFilter[udid] = combat
 	builderFilter[udid] = builder
 	buildingFilter[udid] = building
@@ -355,7 +356,7 @@ function widget:Update(dt)
 	end
 
 	-- only select new units identical to those already selected
-	if mods.same and #referenceSelection > 0 then
+	if mods.same and next(referenceSelectionTypes) ~= nil then
 		included = {}
 		for i = 1, #mouseSelection do
 			uid = mouseSelection[i]
@@ -583,7 +584,7 @@ function widget:Initialize()
 		end
 		
 		-- Apply same-type filter if active
-		if mods.same and #referenceSelection > 0 then
+		if mods.same and next(referenceSelectionTypes) ~= nil then
 			included = {}
 			for i = 1, #mouseSelection do
 				uid = mouseSelection[i]
