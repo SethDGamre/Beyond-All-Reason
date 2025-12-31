@@ -17,7 +17,7 @@ function gadget:GetInfo()
 	}
 end
 
-if not gadgetHandler:IsSyncedCode() then
+if not gadgetHandler:IsSyncedCode() or Spring.GetModOptions().ruins_seed ~= "random" then
 	return false
 end
 
