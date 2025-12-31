@@ -1069,9 +1069,9 @@ local options = {
         def 	= "scav_only",
         section = "options_extra",
         items 	= {
-            { key = "enabled", 		name = "Enabled", unlock = {"ruins_density", "ruins_only_t1"} },
-            { key = "scav_only", 	name = "Enabled for Scavengers only", unlock = {"ruins_density", "ruins_only_t1"} },
-            { key = "disabled", 	name = "Disabled", lock = {"ruins_density", "ruins_only_t1"} },
+            { key = "enabled", 		name = "Enabled", unlock = {"ruins_density", "ruins_seed", "ruins_only_t1"} },
+            { key = "scav_only", 	name = "Enabled for Scavengers only", unlock = {"ruins_density", "ruins_seed", "ruins_only_t1"} },
+            { key = "disabled", 	name = "Disabled", lock = {"ruins_density", "ruins_seed", "ruins_only_t1"} },
         }
     },
 
@@ -1088,6 +1088,15 @@ local options = {
             { key = "rare",     name = "Rare" },
             { key = "veryrare",  name = "Very Rare" },
         }
+    },
+
+    {
+        key    	= "ruins_seed",
+        name   	= "Ruins: Random Seed",
+        desc   	= "Set a specific seed for deterministic ruins placement (leave empty or 'random' for random placement)",
+        type   	= "string",
+        def    	= "random",
+        section	= "options_extra",
     },
 
     {
