@@ -68,6 +68,7 @@ local airReworkWeaponTweaks = airRework.WeaponTweaks
 local empRework = VFS.Include("unitbasedefs/emp_rework.lua")
 local empReworkUnitTweaks = empRework.UnitTweaks
 local empReworkWeaponTweaks = empRework.WeaponTweaks
+local builderClaimTweaks = VFS.Include("unitbasedefs/builder_claim.lua").Tweaks
 
 local scavWeaponDefPost = VFS.Include("gamedata/scavengers/weapondef_post.lua").scavWeaponDefPost
 
@@ -573,6 +574,11 @@ local function unitDef_Post(name, uDef)
 
 	if modOptions.techsplit_balance == true then
 		uDef = techsplit_balanceTweaks(name, uDef)
+	end
+
+	-- Experimental Builder Claim
+	if modOptions.experimental_builder_claim then
+		uDef = builderClaimTweaks(name, uDef)
 	end
 
 	-- Experimental Low Priority Pacifists

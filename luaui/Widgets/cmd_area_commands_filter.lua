@@ -53,6 +53,22 @@ local commandLimit = 2000
 
 local myAllyTeamID
 
+local ClaimApi = Spring.GetModOptions().experimental_builder_claim and VFS.Include("luaui/Include/claim_api.lua") or nil
+local gaiaTeamID = ClaimApi and ClaimApi.GetGaiaTeamID() or nil
+
+local function getCaptureTargetAllegiance(selectedUnits, defaultAllegiance)
+	if ClaimApi and ClaimApi.SelectionIsClaimOnly(selectedUnits) then
+		return gaiaTeamID
+	end
+	return defaultAllegiance
+end
+
+-- Radius in elmos to search for the unit/feature the user clicked on at the
+-- command center.  This replaces the old spWorldToScreenCoords → spTraceScreenRay
+-- pipeline which was unreliable at oblique camera angles and under multiplayer
+-- frame-interpolation conditions.
+local CLICK_SEARCH_RADIUS = 60
+
 ---------------------------------------------------------------------------------------
 --- Target sorting logic (pick the closest first)
 ---------------------------------------------------------------------------------------
@@ -429,12 +445,16 @@ local function filterUnits(targetId, cmdX, cmdZ, radius, options, targetAllegian
 	end
 
 	local isEnemyTarget = spGetUnitAllyTeam(targetId) ~= myAllyTeamID
-	if isEnemyTarget and targetAllegiance ~= ALL_UNITS and targetAllegiance ~= ENEMY_UNITS then
-		-- targeting enemy when only allies are allowed
+	local isGaiaOnlyFilter = gaiaTeamID and targetAllegiance == gaiaTeamID
+	if isEnemyTarget and targetAllegiance ~= ALL_UNITS and targetAllegiance ~= ENEMY_UNITS and not isGaiaOnlyFilter then
 		return nil
 	end
 
-	if isEnemyTarget then
+	if isGaiaOnlyFilter then
+		if spGetUnitTeam(targetId) ~= gaiaTeamID then
+			return nil
+		end
+	elseif isEnemyTarget then
 		targetAllegiance = ENEMY_UNITS
 	else
 		targetAllegiance = spGetUnitTeam(targetId)
@@ -527,9 +547,65 @@ function widget:CommandNotify(cmdId, params, options)
 		return false
 	end
 
+	local targetAllegiance = getCaptureTargetAllegiance(selectedUnits, currentCommand.targetAllegiance)
+
 	local cmdX, cmdY, cmdZ, radius = params[1], params[2], params[3], params[4]
 	local mouseX, mouseY = spWorldToScreenCoords(cmdX, cmdY, cmdZ)
 	local targetType, targetId = spTraceScreenRay(mouseX, mouseY)
+
+	-- Find the unit or feature the user clicked on by searching the world near the
+	-- command center instead of round-tripping through screen-space.  The old
+	-- spWorldToScreenCoords → spTraceScreenRay approach projected the *ground*
+	-- position (cmdY = ground height) to screen, which at non-overhead camera
+	-- angles gives a shifted screen position that can hit the wrong unit—especially
+	-- in dense fights or under multiplayer frame interpolation.
+	local targetType, targetId
+
+	if currentCommand.allowedTargetTypes[UNIT] then
+		if currentCommand.targetAllegiance == ENEMY_UNITS and targetAllegiance == ENEMY_UNITS and WG.FindNearestEnemyUnit then
+			targetId = WG.FindNearestEnemyUnit(cmdX, cmdY, cmdZ, CLICK_SEARCH_RADIUS, spGetMyTeamID())
+		else
+			local nearbyUnits = spGetUnitsInCylinder(cmdX, cmdZ, CLICK_SEARCH_RADIUS, targetAllegiance)
+			if nearbyUnits then
+				local bestDistSq = math.huge
+				for _, uid in ipairs(nearbyUnits) do
+					local ux, _, uz = spGetUnitPosition(uid)
+					if ux then
+						local dx, dz = ux - cmdX, uz - cmdZ
+						local distSq = dx * dx + dz * dz
+						if distSq < bestDistSq then
+							bestDistSq = distSq
+							targetId = uid
+						end
+					end
+				end
+			end
+		end
+		if targetId then
+			targetType = UNIT
+		end
+	end
+
+	if not targetId and currentCommand.allowedTargetTypes[FEATURE] then
+		local nearbyFeatures = spGetFeaturesInCylinder(cmdX, cmdZ, CLICK_SEARCH_RADIUS)
+		if nearbyFeatures then
+			local bestDistSq = math.huge
+			for _, fid in ipairs(nearbyFeatures) do
+				local fx, _, fz = spGetFeaturePosition(fid)
+				if fx then
+					local dx, dz = fx - cmdX, fz - cmdZ
+					local distSq = dx * dx + dz * dz
+					if distSq < bestDistSq then
+						bestDistSq = distSq
+						targetId = fid
+					end
+				end
+			end
+			if targetId then
+				targetType = FEATURE
+			end
+		end
+	end
 
 	if not currentCommand.allowedTargetTypes[targetType] then
 		return false
@@ -538,7 +614,7 @@ function widget:CommandNotify(cmdId, params, options)
 	local filteredTargets
 
 	if targetType == UNIT then
-		filteredTargets = filterUnits(targetId, cmdX, cmdZ, radius, options, currentCommand.targetAllegiance)
+		filteredTargets = filterUnits(targetId, cmdX, cmdZ, radius, options, targetAllegiance)
 	elseif targetType == FEATURE then
 		local unitDefName = spGetFeatureResurrect(targetId)
 		-- filter only wrecks which can be resurrected

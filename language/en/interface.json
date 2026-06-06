@@ -238,6 +238,8 @@
 			"restore_tooltip": "Restore an area of the map to its original height",
 			"capture": "Capture",
 			"capture_tooltip": "Convert units that belong to the enemy (or ally)",
+			"claim": "Claim",
+			"claim_tooltip": "Claim neutral units on the map",
 			"settarget": "Set Target",
 			"settarget_tooltip": "Set a prioritized target (prioritizes targeting when target in range) ",
 			"canceltarget": "Clear Target",

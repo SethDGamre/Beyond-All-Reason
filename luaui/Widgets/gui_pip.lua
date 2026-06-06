@@ -71,6 +71,8 @@ end
 ----------------------------------------------------------------------------------------------------
 local keyConfig = VFS.Include("luaui/configs/keyboard_layouts.lua")
 
+local ClaimApi = Spring.GetModOptions().experimental_builder_claim and VFS.Include("luaui/Include/claim_api.lua") or nil
+
 ----------------------------------------------------------------------------------------------------
 -- GL4 instanced rendering support (for efficient icon drawing with many units)
 -- Uses raw VBO + direct array writes for zero per-frame allocations.
@@ -15319,9 +15321,17 @@ local function HandleHoverAndCursor(mx, my)
 				return
 			end
 		else
-			local cursorName = cmdCursors[activeCmdID]
-			if cursorName then
-				Spring.SetMouseCursor(cursorName)
+			if activeCmdID == CMD.CAPTURE and ClaimApi and ClaimApi.SelectionIsClaimOnly(frameSel or Spring.GetSelectedUnits()) then
+				if lastHoveredUnitID and ClaimApi.IsValidClaimTarget(lastHoveredUnitID) then
+					Spring.SetMouseCursor('Capture')
+				else
+					Spring.SetMouseCursor('cursorbuildbad')
+				end
+			else
+				local cursorName = cmdCursors[activeCmdID]
+				if cursorName then
+					Spring.SetMouseCursor(cursorName)
+				end
 			end
 		end
 	end
@@ -16958,7 +16968,11 @@ function widget:Update(dt)
 
 				-- Commands that can only target enemy units
 				if cmdID == CMD.ATTACK or (setTargetCmd and cmdID == setTargetCmd) or cmdID == CMD.CAPTURE then
-					isValidTarget = not isAlly
+					if cmdID == CMD.CAPTURE and ClaimApi and ClaimApi.SelectionIsClaimOnly(frameSel or Spring.GetSelectedUnits()) then
+						isValidTarget = ClaimApi.IsValidClaimTarget(unitID)
+					else
+						isValidTarget = not isAlly
+					end
 				-- Commands that can only target allied units
 				elseif cmdID == CMD.GUARD or cmdID == CMD.REPAIR or cmdID == CMD.LOAD_UNITS then
 					isValidTarget = isAlly

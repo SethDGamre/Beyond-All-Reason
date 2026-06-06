@@ -1786,6 +1786,15 @@ local options = {
     },
 
     {
+        key    	= "experimental_builder_claim",
+        name   	= "Builder Claim",
+        desc   	= "Constructors can claim neutral map units, but not enemy units.",
+        type   	= "bool",
+        section = "options_experimental",
+        def  	= false,
+    },
+
+    {
         key    	= "experimental_low_priority_pacifists",
         name   	= "Low Priority Pacifists",
         desc   	= "Makes the automatic target priority of non-combat mobile units much lower, so they must be intentionally targeted.",
