@@ -24,8 +24,22 @@ function ClaimApi.GetGaiaTeamID()
 	return gaiaTeamID
 end
 
-function ClaimApi.IsValidClaimTarget(unitID)
-	return Spring.GetUnitTeam(unitID) == gaiaTeamID
+function ClaimApi.IsValidClaimTarget(unitID, teamID)
+	if not unitID then
+		return false
+	end
+	local targetTeamID = Spring.GetUnitTeam(unitID)
+	if not targetTeamID then
+		return false
+	end
+	if targetTeamID == gaiaTeamID then
+		return true
+	end
+	teamID = teamID or Spring.GetMyTeamID()
+	if Spring.AreTeamsAllied(teamID, targetTeamID) then
+		return false
+	end
+	return Spring.GetUnitIsBeingBuilt(unitID) == true
 end
 
 function ClaimApi.SelectionIsClaimOnly(selectedUnits)

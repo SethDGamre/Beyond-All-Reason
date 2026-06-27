@@ -18,12 +18,11 @@ end
 local spGetActiveCommand = Spring.GetActiveCommand
 local spGetMouseState = Spring.GetMouseState
 local spGetSelectedUnits = Spring.GetSelectedUnits
-local spGetUnitTeam = Spring.GetUnitTeam
 local spSetMouseCursor = Spring.SetMouseCursor
 local spTraceScreenRay = Spring.TraceScreenRay
 
 local function isValidClaimTarget(unitID)
-	return unitID and spGetUnitTeam(unitID) == ClaimApi.GetGaiaTeamID()
+	return unitID and ClaimApi.IsValidClaimTarget(unitID)
 end
 
 function widget:Update()

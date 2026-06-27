@@ -58,9 +58,44 @@ local gaiaTeamID = ClaimApi and ClaimApi.GetGaiaTeamID() or nil
 
 local function getCaptureTargetAllegiance(selectedUnits, defaultAllegiance)
 	if ClaimApi and ClaimApi.SelectionIsClaimOnly(selectedUnits) then
-		return gaiaTeamID
+		return ALL_UNITS
 	end
 	return defaultAllegiance
+end
+
+local function filterClaimUnits(targetId, cmdX, cmdZ, radius, options)
+	if not ClaimApi.IsValidClaimTarget(targetId) then
+		return nil
+	end
+
+	local alt = options.alt
+	local ctrl = options.ctrl
+	local filteredTargets = {}
+	local unitDefId = spGetUnitDefID(targetId)
+	local unitsInArea = spGetUnitsInCylinder(cmdX, cmdZ, radius, ALL_UNITS)
+
+	if not unitsInArea then
+		return nil
+	end
+
+	if ctrl then
+		for i = 1, #unitsInArea do
+			local unitID = unitsInArea[i]
+			if ClaimApi.IsValidClaimTarget(unitID) then
+				tableInsert(filteredTargets, unitID)
+			end
+		end
+		return filteredTargets
+	end
+
+	for i = 1, #unitsInArea do
+		local unitID = unitsInArea[i]
+		if ClaimApi.IsValidClaimTarget(unitID) and spGetUnitDefID(unitID) == unitDefId then
+			tableInsert(filteredTargets, unitID)
+		end
+	end
+
+	return filteredTargets
 end
 
 -- Radius in elmos to search for the unit/feature the user clicked on at the
@@ -548,21 +583,32 @@ function widget:CommandNotify(cmdId, params, options)
 	end
 
 	local targetAllegiance = getCaptureTargetAllegiance(selectedUnits, currentCommand.targetAllegiance)
+	local useClaimAreaFilter = cmdId == CMD.CAPTURE and ClaimApi and ClaimApi.SelectionIsClaimOnly(selectedUnits)
 
 	local cmdX, cmdY, cmdZ, radius = params[1], params[2], params[3], params[4]
-	local mouseX, mouseY = spWorldToScreenCoords(cmdX, cmdY, cmdZ)
-	local targetType, targetId = spTraceScreenRay(mouseX, mouseY)
 
-	-- Find the unit or feature the user clicked on by searching the world near the
-	-- command center instead of round-tripping through screen-space.  The old
-	-- spWorldToScreenCoords → spTraceScreenRay approach projected the *ground*
-	-- position (cmdY = ground height) to screen, which at non-overhead camera
-	-- angles gives a shifted screen position that can hit the wrong unit—especially
-	-- in dense fights or under multiplayer frame interpolation.
 	local targetType, targetId
 
 	if currentCommand.allowedTargetTypes[UNIT] then
-		if currentCommand.targetAllegiance == ENEMY_UNITS and targetAllegiance == ENEMY_UNITS and WG.FindNearestEnemyUnit then
+		if useClaimAreaFilter then
+			local nearbyUnits = spGetUnitsInCylinder(cmdX, cmdZ, CLICK_SEARCH_RADIUS, ALL_UNITS)
+			if nearbyUnits then
+				local bestDistSq = math.huge
+				for _, uid in ipairs(nearbyUnits) do
+					if ClaimApi.IsValidClaimTarget(uid) then
+						local ux, _, uz = spGetUnitPosition(uid)
+						if ux then
+							local dx, dz = ux - cmdX, uz - cmdZ
+							local distSq = dx * dx + dz * dz
+							if distSq < bestDistSq then
+								bestDistSq = distSq
+								targetId = uid
+							end
+						end
+					end
+				end
+			end
+		elseif currentCommand.targetAllegiance == ENEMY_UNITS and targetAllegiance == ENEMY_UNITS and WG.FindNearestEnemyUnit then
 			targetId = WG.FindNearestEnemyUnit(cmdX, cmdY, cmdZ, CLICK_SEARCH_RADIUS, spGetMyTeamID())
 		else
 			local nearbyUnits = spGetUnitsInCylinder(cmdX, cmdZ, CLICK_SEARCH_RADIUS, targetAllegiance)
@@ -614,7 +660,11 @@ function widget:CommandNotify(cmdId, params, options)
 	local filteredTargets
 
 	if targetType == UNIT then
-		filteredTargets = filterUnits(targetId, cmdX, cmdZ, radius, options, targetAllegiance)
+		if useClaimAreaFilter then
+			filteredTargets = filterClaimUnits(targetId, cmdX, cmdZ, radius, options)
+		else
+			filteredTargets = filterUnits(targetId, cmdX, cmdZ, radius, options, targetAllegiance)
+		end
 	elseif targetType == FEATURE then
 		local unitDefName = spGetFeatureResurrect(targetId)
 		-- filter only wrecks which can be resurrected

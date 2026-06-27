@@ -16,12 +16,18 @@ if not gadgetHandler:IsSyncedCode() then
 	return
 end
 
+local spAreTeamsAllied = Spring.AreTeamsAllied
 local spGetUnitTeam = Spring.GetUnitTeam
 local spGetUnitDefID = Spring.GetUnitDefID
+local spGetUnitIsBeingBuilt = Spring.GetUnitIsBeingBuilt
 local spGetUnitsInCylinder = Spring.GetUnitsInCylinder
+local spGetUnitCommandCount = Spring.GetUnitCommandCount
+local spGetUnitCurrentCommand = Spring.GetUnitCurrentCommand
 local spGiveOrderToUnit = Spring.GiveOrderToUnit
+local spGetAllUnits = Spring.GetAllUnits
 
 local gaiaTeamID = Spring.GetGaiaTeamID()
+local ALL_UNITS = Spring.ALL_UNITS
 local reissueOrder = Game.Commands.ReissueOrder
 
 local neutralOnlyUnitDefIDs = {}
@@ -31,6 +37,23 @@ for unitDefID = 1, #UnitDefs do
 	if unitDef.customParams.capture_neutral_only == "1" then
 		neutralOnlyUnitDefIDs[unitDefID] = true
 	end
+end
+
+local function isValidClaimTarget(targetUnitID, builderTeamID)
+	if not targetUnitID then
+		return false
+	end
+	local targetTeamID = spGetUnitTeam(targetUnitID)
+	if not targetTeamID then
+		return false
+	end
+	if targetTeamID == gaiaTeamID then
+		return true
+	end
+	if spAreTeamsAllied(builderTeamID, targetTeamID) then
+		return false
+	end
+	return spGetUnitIsBeingBuilt(targetUnitID) == true
 end
 
 local function buildGiveOrderOptions(cmdOptions, useShift)
@@ -56,6 +79,57 @@ local function buildGiveOrderOptions(cmdOptions, useShift)
 	return options
 end
 
+local function getValidClaimTargetsInArea(cmdX, cmdZ, radius, builderTeamID)
+	local validTargets = {}
+	local seenTargets = {}
+
+	local gaiaUnits = spGetUnitsInCylinder(cmdX, cmdZ, radius, gaiaTeamID)
+	if gaiaUnits then
+		for i = 1, #gaiaUnits do
+			local targetUnitID = gaiaUnits[i]
+			if not seenTargets[targetUnitID] then
+				seenTargets[targetUnitID] = true
+				validTargets[#validTargets + 1] = targetUnitID
+			end
+		end
+	end
+
+	local unitsInArea = spGetUnitsInCylinder(cmdX, cmdZ, radius, ALL_UNITS)
+	if unitsInArea then
+		for i = 1, #unitsInArea do
+			local targetUnitID = unitsInArea[i]
+			if not seenTargets[targetUnitID] and isValidClaimTarget(targetUnitID, builderTeamID) then
+				seenTargets[targetUnitID] = true
+				validTargets[#validTargets + 1] = targetUnitID
+			end
+		end
+	end
+
+	return validTargets
+end
+
+local function cancelCaptureOrdersOnTarget(targetUnitID)
+	local allUnits = spGetAllUnits()
+	for i = 1, #allUnits do
+		local builderID = allUnits[i]
+		local builderDefID = spGetUnitDefID(builderID)
+		if neutralOnlyUnitDefIDs[builderDefID] then
+			local tags = {}
+			local tagCount = 0
+			for index = 1, spGetUnitCommandCount(builderID) do
+				local command, _, tag, targetID = spGetUnitCurrentCommand(builderID, index)
+				if command == CMD.CAPTURE and targetID == targetUnitID then
+					tagCount = tagCount + 1
+					tags[tagCount] = tag
+				end
+			end
+			if tagCount > 0 then
+				spGiveOrderToUnit(builderID, CMD.REMOVE, tags)
+			end
+		end
+	end
+end
+
 function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, cmdParams, cmdOptions, cmdTag, fromSynced, fromLua, fromInsert)
 	if not neutralOnlyUnitDefIDs[unitDefID] then
 		return true
@@ -65,10 +139,7 @@ function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, cmdParams, cmdOpt
 
 	if nParams == 1 or nParams == 5 then
 		local targetUnitID = cmdParams[1]
-		local targetTeamID = targetUnitID and spGetUnitTeam(targetUnitID)
-		if targetTeamID then
-			return targetTeamID == gaiaTeamID
-		end
+		return isValidClaimTarget(targetUnitID, teamID)
 	elseif nParams == 4 then
 		if cmdOptions.ctrl then
 			cmdOptions.ctrl = false
@@ -76,11 +147,9 @@ function gadget:AllowCommand(unitID, unitDefID, teamID, cmdID, cmdParams, cmdOpt
 			return false
 		end
 		local cmdX, cmdZ, radius = cmdParams[1], cmdParams[3], cmdParams[4]
-		local gaiaUnits = spGetUnitsInCylinder(cmdX, cmdZ, radius, gaiaTeamID)
-		if gaiaUnits then
-			for i = 1, #gaiaUnits do
-				spGiveOrderToUnit(unitID, CMD.CAPTURE, { gaiaUnits[i] }, buildGiveOrderOptions(cmdOptions, i > 1))
-			end
+		local validTargets = getValidClaimTargetsInArea(cmdX, cmdZ, radius, teamID)
+		for i = 1, #validTargets do
+			spGiveOrderToUnit(unitID, CMD.CAPTURE, { validTargets[i] }, buildGiveOrderOptions(cmdOptions, i > 1))
 		end
 		return false
 	end
@@ -92,7 +161,14 @@ function gadget:AllowUnitCaptureStep(builderID, builderTeam, unitID, unitDefID, 
 	if not neutralOnlyUnitDefIDs[builderDefID] then
 		return true
 	end
-	return spGetUnitTeam(unitID) == gaiaTeamID
+	return isValidClaimTarget(unitID, builderTeam)
+end
+
+function gadget:UnitFinished(unitID, unitDefID, unitTeam)
+	if unitTeam == gaiaTeamID then
+		return
+	end
+	cancelCaptureOrdersOnTarget(unitID)
 end
 
 function gadget:Initialize()
