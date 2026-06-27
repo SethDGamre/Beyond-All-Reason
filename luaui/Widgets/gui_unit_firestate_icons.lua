@@ -3,7 +3,7 @@ local widget = widget ---@type Widget
 function widget:GetInfo()
 	return {
 		name      = "Unit Fire State Icons", -- GL4
-		desc      = "Shows hold fire and return fire icons above units",
+		desc      = "Shows Passive and Defensive icons above units",
 		author    = "Floris",
 		date      = "2026",
 		license   = "GNU GPL, v2 or later",
@@ -25,11 +25,13 @@ local spGetUnitIsDead = Spring.GetUnitIsDead
 local spGetSelectedUnits = Spring.GetSelectedUnits
 local spGetMyPlayerID = Spring.GetMyPlayerID
 local spGetMyTeamID   = Spring.GetMyTeamID
+local spGetUnitRulesParam = Spring.GetUnitRulesParam
 
 local gaiaTeamID = Spring.GetGaiaTeamID()
 
 local HOLD_FIRE   = 0
 local RETURN_FIRE = 1
+local RETURN_FIRE_RULES_PARAM = "returnFireVirtual"
 
 -- Textures to display (replace with dedicated icons if available)
 local holdFireTexture   = "LuaUI/Images/holdfire.png"
@@ -149,6 +151,13 @@ local function pushToVBO(vbo, unitID, unitDefID, gf)
 	pushElementInstance(vbo, instanceData, unitID, false, true, unitID)
 end
 
+local function getDisplayFireState(unitID, fs)
+	if spGetUnitRulesParam(unitID, RETURN_FIRE_RULES_PARAM) == 1 then
+		return RETURN_FIRE
+	end
+	return fs
+end
+
 --------------------------------------------------------------------------------
 -- Apply a fire-state change for one unit into the appropriate VBOs
 --------------------------------------------------------------------------------
@@ -223,7 +232,7 @@ function widget:VisibleUnitsChanged(extVisibleUnits, extNumVisibleUnits)
 			if not crashingUnits[unitID] and not deadAllyTeams[teamToAllyTeam[teamID]] then
 				local states = spGetUnitStates(unitID)
 				if states then
-					local fs = states.firestate
+					local fs = getDisplayFireState(unitID, states.firestate)
 					unitFireState[unitID] = fs
 					applyFireState(unitID, unitDefID, fs, gf)
 				end
@@ -241,7 +250,7 @@ function widget:VisibleUnitAdded(unitID, unitDefID, unitTeam)
 	if crashingUnits[unitID] or deadAllyTeams[teamToAllyTeam[unitTeam]] then return end
 	local states = spGetUnitStates(unitID)
 	if not states then return end
-	local fs = states.firestate
+	local fs = getDisplayFireState(unitID, states.firestate)
 	unitFireState[unitID] = fs
 	applyFireState(unitID, unitDefID, fs, spGetGameFrame())
 	if holdFireVBO.dirty then uploadAllElements(holdFireVBO) end
@@ -285,14 +294,20 @@ function widget:CommandNotify(cmdID, cmdParams, cmdOpts)
 		else
 			manuallyHeldFire[unitID] = nil
 		end
+		if fs == RETURN_FIRE and visibleUnits[unitID] and not crashingUnits[unitID] then
+			unitFireState[unitID] = RETURN_FIRE
+			applyFireState(unitID, visibleUnits[unitID], RETURN_FIRE, spGetGameFrame())
+		end
 	end
+	if holdFireVBO.dirty then uploadAllElements(holdFireVBO) end
+	if returnFireVBO.dirty then uploadAllElements(returnFireVBO) end
 	return false
 end
 
 function widget:UnitCommand(unitID, unitDefID, teamID, cmdID, cmdParams, cmdOpts, cmdTag, playerID, fromSynced, fromLua)
 	if teamID == gaiaTeamID then return end
 	if cmdID ~= CMD.FIRE_STATE then return end
-	local fs = cmdParams[1]
+	local fs = getDisplayFireState(unitID, cmdParams[1])
 	if fs ~= HOLD_FIRE then
 		manuallyHeldFire[unitID] = nil
 	end

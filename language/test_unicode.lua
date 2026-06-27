@@ -162,9 +162,9 @@ return {
 				morph = "Upgrade",
 				morph_tooltip = "Upgrade to next Tech-level (second click to cancel)",
 				-- Stateful orders
-				['Fire at will'] = "Fire at will",
-				['Hold fire'] = "Hold fire",
-				['Return fire'] = "Return fire",
+				['Fire at will'] = "Aggressive",
+				['Hold fire'] = "Passive",
+				['Return fire'] = "Defensive",
 				firestate_tooltip = "Set under what conditions a unit should start firing at enemies (without explicit attack order)",
 				['Hold pos'] = "Hold pos",
 				['Maneuver'] = "Maneuver",

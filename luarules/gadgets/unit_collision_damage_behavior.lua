@@ -117,6 +117,8 @@ for weaponDefID, wDef in ipairs(WeaponDefs) do
 	if wDef.damages and wDef.damages.impulseFactor == 0 or
 		(wDef.damages.impulseFactor < minImpulseFactor and wDef.damages.impulseBoost < maxDamage(wDef.damages) * minImpulseToDamageRatio) then
 		weaponDefIgnored[weaponDefID] = true
+	elseif not weaponDefIgnored[weaponDefID] then
+		Script.SetWatchAllowTarget(weaponDefID, true)
 	end
 end
 
@@ -276,4 +278,8 @@ end
 
 function gadget:Shutdown()
 	GG.SetVelocityControl = nil
+end
+
+function gadget:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum, attackerWeaponDefID, defPriority)
+	Spring.Echo("AllowWeaponTarget", UnitDefs[Spring.GetUnitDefID(attackerID)].name, UnitDefs[Spring.GetUnitDefID(targetID)].name)
 end

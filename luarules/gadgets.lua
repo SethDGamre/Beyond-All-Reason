@@ -1710,14 +1710,21 @@ return ((ignore and -1) or 1)
 end
 
 function gadgetHandler:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum, attackerWeaponDefID, defPriority)
-	-- Calls with no input priority are pure pass/fail tests.
-	-- These are common, and BAR never disallows any of them.
-	if not defPriority then
-		return true -- The second return value is never used.
-	end
-
 	local allowed = true
 	local result = 1.0
+
+	if not defPriority then
+		if targetID == -1 and attackerWeaponNum == -1 then
+			return true
+		end
+		for _, g in ipairs(self.AllowWeaponTargetList) do
+			local targetPriority = g:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum, attackerWeaponDefID, defPriority)
+			if targetPriority == false then
+				return false
+			end
+		end
+		return true
+	end
 
 	if targetID == -1 and attackerWeaponNum == -1 then
 		-- The `targetPriority` return value is actually the autotarget search radius,
@@ -1730,7 +1737,9 @@ function gadgetHandler:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum
 		-- The actual callin. BAR only uses AllowWeaponTarget for the target priority.
 		for _, g in ipairs(self.AllowWeaponTargetList) do
 			local targetPriority = g:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum, attackerWeaponDefID, defPriority)
-			if targetPriority then
+			if targetPriority == false then
+				return false, result
+			elseif targetPriority then
 				result = targetPriority
 			end
 		end
