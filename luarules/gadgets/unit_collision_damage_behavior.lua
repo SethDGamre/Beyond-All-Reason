@@ -279,7 +279,3 @@ end
 function gadget:Shutdown()
 	GG.SetVelocityControl = nil
 end
-
-function gadget:AllowWeaponTarget(attackerID, targetID, attackerWeaponNum, attackerWeaponDefID, defPriority)
-	Spring.Echo("AllowWeaponTarget", UnitDefs[Spring.GetUnitDefID(attackerID)].name, UnitDefs[Spring.GetUnitDefID(targetID)].name)
-end

@@ -1,4 +1,4 @@
-local gadget = gadget ---@type Gadget
+wlocal gadget = gadget ---@type Gadget
 
 function gadget:GetInfo()
 	return {
@@ -17,6 +17,8 @@ if not gadgetHandler:IsSyncedCode() then
 end
 
 local DEBUG_DEFENSIVE_TARGETING = true
+local ACCURACY_RANGE_FRACTION = 0.75
+local THREAT_MARGIN = 1.25
 
 local CMD_FIRE_STATE = CMD.FIRE_STATE
 local FIRE_STATE_RETURN_FIRE = 1
@@ -38,10 +40,16 @@ local spGiveOrderToUnit = Spring.GiveOrderToUnit
 local spSetUnitRulesParam = Spring.SetUnitRulesParam
 local mathDistance2dSquared = math.distance2dSquared
 local mathSqrt = math.sqrt
+local mathMax = math.max
+local mathDiag = math.diag
 local stringFormat = string.format
 
+local footprintElmos = Game.footprintScale * Game.squareSize
+
 local eligibleUnitDef = {}
-local maxEngageDistSquared = {}
+local attackerEffectiveDps = {}
+local unitThreatData = {}
+local smallestTargetRadius = 0
 local watchedWeaponDef = {}
 local applyingFireState = false
 
@@ -66,6 +74,33 @@ local function isQualifyingWeapon(unitDef, weapon)
 		and not (unitDef.canManualFire and weaponDef.manualFire)
 end
 
+local function getUnitRadius(unitDef)
+	return mathDiag(unitDef.xsize * footprintElmos, unitDef.zsize * footprintElmos) * 0.5
+end
+
+local function getWeaponSpreadAtRange(weaponDef, rangeFraction)
+	local weaponRange = weaponDef.range or 0
+	if weaponRange <= 0 then
+		return 0
+	end
+	local scatter = (weaponDef.accuracy or 0) + (weaponDef.sprayAngle or 0)
+	local rangeAtEval = weaponRange * rangeFraction
+	return mathMax(weaponDef.damageAreaOfEffect or 0, rangeAtEval * scatter)
+end
+
+local function getWeaponAccuracyFactor(weaponDef)
+	local spreadAtEval = getWeaponSpreadAtRange(weaponDef, ACCURACY_RANGE_FRACTION)
+	if spreadAtEval <= 0 then
+		return 1
+	end
+	local damageRadius = mathMax(weaponDef.damageAreaOfEffect or 0, smallestTargetRadius)
+	if damageRadius >= spreadAtEval then
+		return 1
+	end
+	local ratio = damageRadius / spreadAtEval
+	return ratio * ratio
+end
+
 local function calculateWeaponDps(weaponDef)
 	local damages = weaponDef.damages
 	local damage = damages and damages[0]
@@ -76,6 +111,10 @@ local function calculateWeaponDps(weaponDef)
 	local salvoSize = weaponDef.salvoSize or 1
 	local projectiles = weaponDef.projectiles or 1
 	return damage * salvoSize * projectiles / reload
+end
+
+local function calculateWeaponEffectiveDps(weaponDef)
+	return calculateWeaponDps(weaponDef) * getWeaponAccuracyFactor(weaponDef)
 end
 
 local function getFireStateCmdParams(unitID, state)
@@ -145,6 +184,48 @@ local function initializeUnit(unitID, unitDefID)
 	end
 end
 
+local function calculateUnitThreat(unitDef)
+	local threat = {
+		dps = 0,
+		maxRange = 0,
+		speed = unitDef.speed or 0,
+		health = unitDef.health or 0,
+	}
+	local weapons = unitDef.weapons
+	for i = 1, #weapons do
+		local weapon = weapons[i]
+		if isQualifyingWeapon(unitDef, weapon) then
+			local weaponDef = WeaponDefs[weapon.weaponDef]
+			threat.dps = threat.dps + calculateWeaponDps(weaponDef)
+			if weaponDef.range > threat.maxRange then
+				threat.maxRange = weaponDef.range
+			end
+		end
+	end
+	return threat
+end
+
+local function getTimeUntilTargetCanShootUs(dist, targetThreat)
+	if targetThreat.maxRange <= 0 then
+		return math.huge
+	end
+	if dist <= targetThreat.maxRange then
+		return 0
+	end
+	if targetThreat.speed <= 0 then
+		return math.huge
+	end
+	return (dist - targetThreat.maxRange) / targetThreat.speed
+end
+
+local function getTimeWeKillTarget(attackerDefID, targetThreat)
+	local ourDps = attackerEffectiveDps[attackerDefID]
+	if not ourDps or ourDps <= 0 or targetThreat.health <= 0 then
+		return
+	end
+	return targetThreat.health / ourDps
+end
+
 local function allowTarget(attackerID, targetID, attackerDefID, targetDefID, defPriority, attackerWeaponNum, attackerWeaponDefID)
 	local attackerName = getUnitDefName(attackerDefID)
 	local targetName = getUnitDefName(targetDefID)
@@ -160,12 +241,14 @@ local function allowTarget(attackerID, targetID, attackerDefID, targetDefID, def
 		tostring(defPriority)
 	))
 
-	local targetDistances = maxEngageDistSquared[attackerDefID]
-	local maxDistSq = targetDistances and targetDistances[targetDefID]
-	if not maxDistSq then
-		debugLog(stringFormat("allow %s -> %s: no threat distance cap", attackerName, targetName))
+	local targetThreat = unitThreatData[targetDefID]
+	local timeWeKillTarget = getTimeWeKillTarget(attackerDefID, targetThreat)
+	if not timeWeKillTarget then
+		debugLog(stringFormat("allow %s -> %s: no kill time cap", attackerName, targetName))
 		return true
 	end
+
+	local ourDps = attackerEffectiveDps[attackerDefID]
 
 	local attackerX, _, attackerZ = spGetUnitPosition(attackerID)
 	local targetX, _, targetZ = spGetUnitPosition(targetID)
@@ -175,47 +258,55 @@ local function allowTarget(attackerID, targetID, attackerDefID, targetDefID, def
 	end
 
 	local distSq = mathDistance2dSquared(attackerX, attackerZ, targetX, targetZ)
-	local allowed = distSq <= maxDistSq
+	local dist = mathSqrt(distSq)
+	local timeUntilTargetCanShootUs = getTimeUntilTargetCanShootUs(dist, targetThreat)
+	local timeWeKillWithMargin = timeWeKillTarget * THREAT_MARGIN
+	local allowed = timeUntilTargetCanShootUs <= timeWeKillWithMargin
 	debugLog(stringFormat(
-		"%s %s -> %s dist=%.0f maxDist=%.0f",
+		"%s %s -> %s dist=%.0f targetRange=%.0f effectiveDps=%.1f timeTheyShoot=%.2fs timeWeKill=%.2fs marginKill=%.2fs",
 		allowed and "allow" or "block",
 		attackerName,
 		targetName,
-		mathSqrt(distSq),
-		mathSqrt(maxDistSq)
+		dist,
+		targetThreat.maxRange,
+		ourDps,
+		timeUntilTargetCanShootUs,
+		timeWeKillTarget,
+		timeWeKillWithMargin
 	))
 	return allowed
 end
 
 for unitDefID, unitDef in pairs(UnitDefs) do
-	local dps = 0
-	local hasWeapon = false
+	local radius = getUnitRadius(unitDef)
+	if smallestTargetRadius <= 0 or radius < smallestTargetRadius then
+		smallestTargetRadius = radius
+	end
+	unitThreatData[unitDefID] = calculateUnitThreat(unitDef)
+end
+
+for unitDefID, unitDef in pairs(UnitDefs) do
+	local threat = unitThreatData[unitDefID]
+	local hasWeapon = threat.maxRange > 0
+	local effectiveDps = 0
 	local weapons = unitDef.weapons
 	for i = 1, #weapons do
 		local weapon = weapons[i]
 		if isQualifyingWeapon(unitDef, weapon) then
-			hasWeapon = true
 			local weaponDefID = weapon.weaponDef
 			local weaponDef = WeaponDefs[weaponDefID]
-			dps = dps + calculateWeaponDps(weaponDef)
 			if not watchedWeaponDef[weaponDefID] then
 				watchedWeaponDef[weaponDefID] = true
 				Script.SetWatchAllowTarget(weaponDefID, true)
 			end
+			effectiveDps = effectiveDps + calculateWeaponEffectiveDps(weaponDef)
 		end
 	end
 
 	if hasWeapon then
 		eligibleUnitDef[unitDefID] = true
-		if dps > 0 then
-			maxEngageDistSquared[unitDefID] = {}
-			for targetDefID, targetDef in pairs(UnitDefs) do
-				local maxRange = targetDef.maxWeaponRange or 0
-				local speed = targetDef.speed or 0
-				local health = targetDef.health or 0
-				local maxEngageDist = maxRange + speed * health / dps
-				maxEngageDistSquared[unitDefID][targetDefID] = maxEngageDist * maxEngageDist
-			end
+		if effectiveDps > 0 then
+			attackerEffectiveDps[unitDefID] = effectiveDps
 		end
 	end
 end
