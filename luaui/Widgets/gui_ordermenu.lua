@@ -29,6 +29,59 @@ local OrderMenuFirestate = VFS.Include("luaui/Include/ordermenu_firestate.lua")
 local CANCEL_TARGET_CMD_ID = 34924
 local currentLayout
 
+local function notifyUserFirestateOrder(virtualIndex)
+	local userState
+	if OrderMenuFirestate.userStateForVirtualIndex then
+		userState = OrderMenuFirestate.userStateForVirtualIndex(virtualIndex)
+	else
+		local stateByIndex = {
+			[1] = Firestates.PASSIVE,
+			[2] = Firestates.RETURN_FIRE,
+			[3] = Firestates.AGGRESSIVE,
+		}
+		userState = stateByIndex[virtualIndex]
+	end
+	if userState and WG['unitfirestate'] and WG['unitfirestate'].markUserFirestate then
+		WG['unitfirestate'].markUserFirestate(userState, spGetSelectedUnits())
+	end
+end
+
+local function resolveHotkeyTargetVirtualIndex(optWords)
+	local selectedUnits = spGetSelectedUnits()
+	if #selectedUnits == 0 then
+		return nil
+	end
+	local param = optWords[1] and tonumber(optWords[1])
+	if param ~= nil then
+		return param + 1
+	end
+	local virtualIndex = OrderMenuFirestate.resolveVirtualIndex(selectedUnits[1])
+	if virtualIndex == nil then
+		return nil
+	end
+	local _, _, shift = Spring.GetModKeyState()
+	return OrderMenuFirestate.nextCycledVirtualIndex(virtualIndex, shift)
+end
+
+local function installFirestateNotifyHooks()
+	local originalGiveVirtualIndex = OrderMenuFirestate.giveVirtualIndex
+	OrderMenuFirestate.giveVirtualIndex = function(virtualIndex, cmdOptions)
+		notifyUserFirestateOrder(virtualIndex)
+		return originalGiveVirtualIndex(virtualIndex, cmdOptions)
+	end
+	local originalHotkeyHandler = OrderMenuFirestate.hotkeyHandler
+	OrderMenuFirestate.hotkeyHandler = function(cmd, optLine, optWords, data, isRepeat, release)
+		if not release then
+			local targetIndex = resolveHotkeyTargetVirtualIndex(optWords)
+			if targetIndex then
+				OrderMenuFirestate.giveVirtualIndex(targetIndex, 0)
+				return false
+			end
+		end
+		return originalHotkeyHandler(cmd, optLine, optWords, data, isRepeat, release)
+	end
+end
+
 local cellZoom = 1
 local cellClickedZoom = 1.05
 local cellHoverZoom = 1.035
@@ -576,6 +629,7 @@ function widget:Initialize()
 			doUpdate = true
 		end,
 	})
+	installFirestateNotifyHooks()
 	reloadBindings()
 	widget:ViewResize()
 	widget:SelectionChanged(spGetSelectedUnits())

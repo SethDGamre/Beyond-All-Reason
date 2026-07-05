@@ -19,7 +19,6 @@ local showAllHoldFireIcons = false	-- else only show for user triggered hold fir
 -- Localized Spring API
 --------------------------------------------------------------------------------
 local spGetGameFrame  = Spring.GetGameFrame
-local spGetUnitRulesParam = Spring.GetUnitRulesParam
 local spValidUnitID   = Spring.ValidUnitID
 local spGetUnitIsDead = Spring.GetUnitIsDead
 local spGetSelectedUnits = Spring.GetSelectedUnits
@@ -73,11 +72,16 @@ local crashingUnits   = {} -- unitIDs currently crashing; skip icon for these
 local chobbyInterface = false
 local unitFireState   = {} -- [unitID] = cached fire state; avoids GetUnitStates every frame
 local manuallyHeldFire = {} -- [unitID] = true if this client explicitly ordered hold fire
+local manuallyReturnFire = {} -- [unitID] = true if this client explicitly ordered return fire
 local unitToTeam        = {} -- [unitID] = teamID; needed to filter dead-allyteam units
 local deadAllyTeams     = {} -- [allyTeamID] = true when entire allyteam has been wiped out
 local teamToAllyTeam    = {} -- [teamID] = allyTeamID; built at Initialize
 local deadTeamCount     = {} -- [allyTeamID] = number of dead teams in that allyteam
 local allyTeamTeamCount = {} -- [allyTeamID] = total number of teams in that allyteam
+local userOrderedFirestate = {} -- [unitID] = userState; pending until UnitCommand confirms user order
+local deferredUserFirestate = {}
+local deferredUserFirestateFrame = -1
+local deferredUserFirestateDirty = false
 local myPlayerID      = spGetMyPlayerID()
 local myTeamID        = spGetMyTeamID()
 local manualHoldStore = nil
@@ -230,10 +234,14 @@ local function userStateToIconState(userState)
 	end
 end
 
-local function getDisplayFireState(unitID)
-	--DEFEND FIRESTATE REWORK: Remove engine fallback; always use user_firestate rules param
+local function getActualFireState(unitID)
 	if not spValidUnitID(unitID) then return nil end
-	return userStateToIconState(Firestates.resolveUserFirestate(unitID))
+	return userStateToIconState(Firestates.fromEngineFirestate(select(1, Spring.GetUnitStates(unitID, false))))
+end
+
+local function fireStateFromCmdParams(cmdParams)
+	if not cmdParams then return nil end
+	return userStateToIconState(Firestates.fromEngineFirestate(tonumber(cmdParams[1])))
 end
 
 local function resolveUserStateFromCommand(cmdID, cmdParams, unitID)
@@ -243,10 +251,73 @@ local function resolveUserStateFromCommand(cmdID, cmdParams, unitID)
 	end
 	if cmdID == CMD_FIRE_STATE then
 		if Spring.GetModOptions().experimental_defend_firestate then
+			--DEFEND FIRESTATE REWORK: Remove engine fallback; always use user_firestate rules param
 			return Firestates.resolveUserFirestate(unitID)
 		end
 		return Firestates.fromEngineFirestate(tonumber(cmdParams[1]))
 	end
+end
+
+local function setManualFireState(unitID, userState)
+	if userState == Firestates.PASSIVE then
+		manuallyHeldFire[unitID] = true
+		manuallyReturnFire[unitID] = nil
+	elseif userState == Firestates.DEFEND or userState == Firestates.RETURN_FIRE then
+		manuallyHeldFire[unitID] = nil
+		manuallyReturnFire[unitID] = true
+	elseif userState ~= nil then
+		manuallyHeldFire[unitID] = nil
+		manuallyReturnFire[unitID] = nil
+	end
+end
+
+local function migrateManualFireStores()
+	for unitID, value in pairs(manuallyHeldFire) do
+		if not spValidUnitID(unitID) or spGetUnitIsDead(unitID) then
+			manuallyHeldFire[unitID] = nil
+		elseif value == true then
+		elseif value == RETURN_FIRE or value == 1 then
+			manuallyHeldFire[unitID] = nil
+			manuallyReturnFire[unitID] = true
+		elseif value == HOLD_FIRE or value == 0 then
+			manuallyHeldFire[unitID] = true
+		else
+			manuallyHeldFire[unitID] = nil
+		end
+	end
+	for unitID, value in pairs(manuallyReturnFire) do
+		if not spValidUnitID(unitID) or spGetUnitIsDead(unitID) then
+			manuallyReturnFire[unitID] = nil
+		elseif value ~= true then
+			manuallyReturnFire[unitID] = true
+		end
+	end
+end
+
+local function shouldApplyScriptFireState(unitID, fs, cmdParams)
+	if manuallyHeldFire[unitID] then
+		return fs == HOLD_FIRE
+	end
+	if manuallyReturnFire[unitID] then
+		if fs == RETURN_FIRE then
+			return true
+		end
+		if fs == HOLD_FIRE and cmdParams and tonumber(cmdParams[1]) == Firestates.ENGINE_HOLD_FIRE and Spring.GetUnitIsCloaked(unitID) then
+			return true
+		end
+		return false
+	end
+	return false
+end
+
+local function shouldShowIcon(unitID, fs)
+	if fs == HOLD_FIRE then
+		return showAllHoldFireIcons or manuallyHeldFire[unitID]
+	end
+	if fs == RETURN_FIRE then
+		return manuallyReturnFire[unitID]
+	end
+	return false
 end
 
 --------------------------------------------------------------------------------
@@ -268,28 +339,109 @@ end
 -- Apply a fire-state change for one unit into the appropriate VBOs
 --------------------------------------------------------------------------------
 local function applyFireState(unitID, unitDefID, fs, gf)
-	if fs == HOLD_FIRE then
-		if showAllHoldFireIcons or manuallyHeldFire[unitID] then
-			pushToVBO(holdFireVBO, unitID, unitDefID, gf)
-		elseif holdFireVBO.instanceIDtoIndex[unitID] then
-			popElementInstance(holdFireVBO, unitID, true)
-		end
+	local showHold = fs == HOLD_FIRE and shouldShowIcon(unitID, HOLD_FIRE)
+	local showReturn = fs == RETURN_FIRE and shouldShowIcon(unitID, RETURN_FIRE)
+	if showHold then
+		pushToVBO(holdFireVBO, unitID, unitDefID, gf)
 		if returnFireVBO.instanceIDtoIndex[unitID] then
 			popElementInstance(returnFireVBO, unitID, true)
 		end
-	elseif fs == RETURN_FIRE then
+	elseif holdFireVBO.instanceIDtoIndex[unitID] then
+		popElementInstance(holdFireVBO, unitID, true)
+	end
+	if showReturn then
 		pushToVBO(returnFireVBO, unitID, unitDefID, gf)
 		if holdFireVBO.instanceIDtoIndex[unitID] then
 			popElementInstance(holdFireVBO, unitID, true)
 		end
-	else
-		if holdFireVBO.instanceIDtoIndex[unitID] then
-			popElementInstance(holdFireVBO, unitID, true)
-		end
-		if returnFireVBO.instanceIDtoIndex[unitID] then
-			popElementInstance(returnFireVBO, unitID, true)
+	elseif returnFireVBO.instanceIDtoIndex[unitID] then
+		popElementInstance(returnFireVBO, unitID, true)
+	end
+end
+
+local function applyUserFireStateOrder(userState, unitIDs)
+	if userState == nil or not unitIDs then return end
+	local fs = userStateToIconState(userState)
+	local gf = spGetGameFrame()
+	for i = 1, #unitIDs do
+		local unitID = unitIDs[i]
+		if spValidUnitID(unitID) and not spGetUnitIsDead(unitID) then
+			setManualFireState(unitID, userState)
+			local unitDefID = visibleUnits[unitID] or Spring.GetUnitDefID(unitID)
+			local teamID = unitToTeam[unitID] or Spring.GetUnitTeam(unitID)
+			if unitDefID and teamID and teamID ~= gaiaTeamID then
+				if not visibleUnits[unitID] then
+					visibleUnits[unitID] = unitDefID
+					unitToTeam[unitID] = teamID
+				end
+				if not crashingUnits[unitID] and not deadAllyTeams[teamToAllyTeam[teamID]] then
+					unitFireState[unitID] = fs
+					applyFireState(unitID, unitDefID, fs, gf)
+				end
+			end
 		end
 	end
+	if holdFireVBO.dirty then uploadAllElements(holdFireVBO) end
+	if returnFireVBO.dirty then uploadAllElements(returnFireVBO) end
+end
+
+local function iconUserStatePriority(userState)
+	if userState == Firestates.RETURN_FIRE or userState == Firestates.DEFEND then
+		return 3
+	end
+	if userState == Firestates.PASSIVE then
+		return 2
+	end
+	return 1
+end
+
+local function mergeDeferredUserState(currentState, newState)
+	if newState == nil then return currentState end
+	if currentState == nil then return newState end
+	if iconUserStatePriority(newState) > iconUserStatePriority(currentState) then
+		return newState
+	end
+	if iconUserStatePriority(newState) < iconUserStatePriority(currentState) then
+		return currentState
+	end
+	return newState
+end
+
+local function queueUserFirestateOrder(userState, unitIDs)
+	local gf = spGetGameFrame()
+	if deferredUserFirestateFrame ~= gf then
+		deferredUserFirestateFrame = gf
+		deferredUserFirestate = {}
+	end
+	for i = 1, #unitIDs do
+		local unitID = unitIDs[i]
+		deferredUserFirestate[unitID] = mergeDeferredUserState(deferredUserFirestate[unitID], userState)
+		userOrderedFirestate[unitID] = deferredUserFirestate[unitID]
+	end
+	deferredUserFirestateDirty = true
+end
+
+local function flushDeferredUserFirestateOrders()
+	if not deferredUserFirestateDirty then return end
+	if deferredUserFirestateFrame ~= spGetGameFrame() then return end
+	deferredUserFirestateDirty = false
+	local ordersByState = {}
+	for unitID, mergedUserState in pairs(deferredUserFirestate) do
+		if not ordersByState[mergedUserState] then
+			ordersByState[mergedUserState] = {}
+		end
+		local unitList = ordersByState[mergedUserState]
+		unitList[#unitList + 1] = unitID
+	end
+	deferredUserFirestate = {}
+	for mergedUserState, unitList in pairs(ordersByState) do
+		applyUserFireStateOrder(mergedUserState, unitList)
+	end
+end
+
+WG['unitfirestate'].markUserFirestate = function(userState, unitIDs)
+	if not unitIDs then return end
+	queueUserFirestateOrder(userState, unitIDs)
 end
 
 --------------------------------------------------------------------------------
@@ -306,6 +458,9 @@ function widget:Initialize()
 	WG['unitfirestate_manualhold'] = WG['unitfirestate_manualhold'] or {}
 	manualHoldStore = WG['unitfirestate_manualhold']
 	manuallyHeldFire = manualHoldStore
+	WG['unitfirestate_manualreturn'] = WG['unitfirestate_manualreturn'] or {}
+	manuallyReturnFire = WG['unitfirestate_manualreturn']
+	migrateManualFireStores()
 
 	-- Build team → allyteam mapping
 	for _, allyTeamID in ipairs(Spring.GetAllyTeamList()) do
@@ -322,6 +477,10 @@ function widget:Initialize()
 	end
 end
 
+function widget:GameFrame()
+	flushDeferredUserFirestateOrders()
+end
+
 function widget:VisibleUnitsChanged(extVisibleUnits, extNumVisibleUnits)
 	InstanceVBOTable.clearInstanceTable(holdFireVBO)
 	InstanceVBOTable.clearInstanceTable(returnFireVBO)
@@ -336,7 +495,7 @@ function widget:VisibleUnitsChanged(extVisibleUnits, extNumVisibleUnits)
 		if teamID ~= gaiaTeamID then
 			unitToTeam[unitID] = teamID
 			if not crashingUnits[unitID] and not deadAllyTeams[teamToAllyTeam[teamID]] then
-				local fs = getDisplayFireState(unitID)
+				local fs = getActualFireState(unitID)
 				unitFireState[unitID] = fs
 				applyFireState(unitID, unitDefID, fs, gf)
 			end
@@ -351,7 +510,7 @@ function widget:VisibleUnitAdded(unitID, unitDefID, unitTeam)
 	visibleUnits[unitID] = unitDefID
 	unitToTeam[unitID] = unitTeam
 	if crashingUnits[unitID] or deadAllyTeams[teamToAllyTeam[unitTeam]] then return end
-	local fs = getDisplayFireState(unitID)
+	local fs = getActualFireState(unitID)
 	unitFireState[unitID] = fs
 	applyFireState(unitID, unitDefID, fs, spGetGameFrame())
 	if holdFireVBO.dirty then uploadAllElements(holdFireVBO) end
@@ -376,6 +535,7 @@ function widget:CrashingAircraft(unitID, unitDefID, teamID)
 	crashingUnits[unitID] = true
 	unitFireState[unitID] = nil
 	manuallyHeldFire[unitID] = nil
+	manuallyReturnFire[unitID] = nil
 	if holdFireVBO.instanceIDtoIndex[unitID] then
 		popElementInstance(holdFireVBO, unitID)
 	end
@@ -385,48 +545,39 @@ function widget:CrashingAircraft(unitID, unitDefID, teamID)
 end
 
 function widget:CommandNotify(cmdID, cmdParams, cmdOpts)
-	if (cmdID ~= CMD_FIRE_STATE and cmdID ~= CMD_USER_FIRESTATE) or not cmdParams then return false end
-	local selectedUnits = spGetSelectedUnits()
-	for i = 1, #selectedUnits do
-		local unitID = selectedUnits[i]
-		local userState = resolveUserStateFromCommand(cmdID, cmdParams, unitID)
-		local fs = userStateToIconState(userState)
-		if userState == Firestates.PASSIVE then
-			manuallyHeldFire[unitID] = true
-		elseif userState ~= nil then
-			manuallyHeldFire[unitID] = nil
-		end
-		if userState ~= nil and visibleUnits[unitID] and not crashingUnits[unitID] then
-			local teamID = unitToTeam[unitID]
-			if teamID and not deadAllyTeams[teamToAllyTeam[teamID]] and unitFireState[unitID] ~= fs then
-				unitFireState[unitID] = fs
-				applyFireState(unitID, visibleUnits[unitID], fs, spGetGameFrame())
-			end
-		end
-	end
-	if holdFireVBO.dirty then uploadAllElements(holdFireVBO) end
-	if returnFireVBO.dirty then uploadAllElements(returnFireVBO) end
 	return false
 end
 
 function widget:UnitCommand(unitID, unitDefID, teamID, cmdID, cmdParams, cmdOpts, cmdTag, playerID, fromSynced, fromLua)
 	if teamID == gaiaTeamID then return end
-	if cmdID ~= CMD_FIRE_STATE and cmdID ~= CMD_USER_FIRESTATE then return end
-	local userState = resolveUserStateFromCommand(cmdID, cmdParams, unitID)
+	if cmdID == CMD_USER_FIRESTATE then
+		local pendingState = userOrderedFirestate[unitID]
+		userOrderedFirestate[unitID] = nil
+		local userState = pendingState or tonumber(cmdParams[1])
+		if userState ~= nil then
+			applyUserFireStateOrder(userState, {unitID})
+		end
+		return
+	end
+	if cmdID ~= CMD_FIRE_STATE then return end
+	local pendingState = userOrderedFirestate[unitID]
+	if pendingState then
+		userOrderedFirestate[unitID] = nil
+		applyUserFireStateOrder(pendingState, {unitID})
+		return
+	end
+	if not manuallyHeldFire[unitID] and not manuallyReturnFire[unitID] then return end
 	local fs
-	if userState ~= nil then
-		fs = userStateToIconState(userState)
+	if cmdParams and cmdParams[1] ~= nil then
+		fs = fireStateFromCmdParams(cmdParams)
 	else
-		fs = getDisplayFireState(unitID)
+		fs = getActualFireState(unitID)
 	end
-	if userState == Firestates.PASSIVE then
-		manuallyHeldFire[unitID] = true
-	elseif userState ~= nil then
-		manuallyHeldFire[unitID] = nil
+	if not shouldApplyScriptFireState(unitID, fs, cmdParams) then
+		return
 	end
-	if not visibleUnits[unitID] or crashingUnits[unitID] or deadAllyTeams[teamToAllyTeam[teamID]] then return end
-	if unitFireState[unitID] == fs then return end
 	unitFireState[unitID] = fs
+	if not visibleUnits[unitID] or crashingUnits[unitID] or deadAllyTeams[teamToAllyTeam[teamID]] then return end
 	applyFireState(unitID, unitDefID, fs, spGetGameFrame())
 	if holdFireVBO.dirty then uploadAllElements(holdFireVBO) end
 	if returnFireVBO.dirty then uploadAllElements(returnFireVBO) end
@@ -446,6 +597,7 @@ function widget:TeamDied(teamID)
 		if teamToAllyTeam[tid] == allyTeamID then
 			unitFireState[unitID] = nil
 			manuallyHeldFire[unitID] = nil
+			manuallyReturnFire[unitID] = nil
 			if holdFireVBO.instanceIDtoIndex[unitID] then
 				popElementInstance(holdFireVBO, unitID)
 			end
@@ -472,14 +624,17 @@ end
 
 function widget:UnitDestroyed(unitID)
 	manuallyHeldFire[unitID] = nil
+	manuallyReturnFire[unitID] = nil
 end
 
 function widget:UnitGiven(unitID)
 	manuallyHeldFire[unitID] = nil
+	manuallyReturnFire[unitID] = nil
 end
 
 function widget:UnitTaken(unitID)
 	manuallyHeldFire[unitID] = nil
+	manuallyReturnFire[unitID] = nil
 end
 
 function widget:RecvLuaMsg(msg, playerID)

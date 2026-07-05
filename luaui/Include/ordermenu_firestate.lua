@@ -223,6 +223,10 @@ local function commandNotify(cmdID, cmdParams, cmdOptions)
 	return giveVirtualIndex(engineParam + 1, cmdOptions)
 end
 
+local function userStateForVirtualIndex(virtualIndex)
+	return stateByVirtualIndex()[virtualIndex]
+end
+
 return {
 	CYCLE_COUNT = CYCLE_COUNT,
 	PIP_COUNT = PIP_COUNT,
@@ -238,4 +242,5 @@ return {
 	giveVirtualIndex = giveVirtualIndex,
 	hotkeyHandler = hotkeyHandler,
 	commandNotify = commandNotify,
+	userStateForVirtualIndex = userStateForVirtualIndex,
 }
