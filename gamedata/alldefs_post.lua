@@ -916,6 +916,14 @@ local function weaponDef_Post(name, wDef)
 
 		---- SHIELD CHANGES
 
+		if wDef.weapontype == "StarburstLauncher" then
+			if not wDef.tracks then
+				wDef.customparams = wDef.customparams or {}
+				wDef.customparams.tracking_actually_false = true
+				wDef.tracks = true
+			end
+		end
+
 		if wDef.weapontype == "DGun" then
 			wDef.interceptedbyshieldtype = 512 --make dgun (like behemoth) interceptable by shields, optionally
 		elseif wDef.weapontype == "StarburstLauncher" and not string.find(name, "raptor") then

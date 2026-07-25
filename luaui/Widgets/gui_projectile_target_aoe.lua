@@ -31,7 +31,6 @@ local spGetProjectilesInRectangle = Spring.GetProjectilesInRectangle
 local spGetProjectileDefID = Spring.GetProjectileDefID
 local spGetProjectileTarget = Spring.GetProjectileTarget
 local spGetProjectilePosition = Spring.GetProjectilePosition
-local spGetGroundHeight = Spring.GetGroundHeight
 local spGetMyAllyTeamID = Spring.GetMyAllyTeamID
 local spGetProjectileTeamID = Spring.GetProjectileTeamID
 local spGetTeamInfo = Spring.GetTeamInfo
@@ -45,6 +44,7 @@ local spGetCameraPosition = Spring.GetCameraPosition
 
 local mapSizeX = Game.mapSizeX
 local mapSizeZ = Game.mapSizeZ
+local ORIGINAL_TARGET_GLOBAL = "StarburstDiveOriginalTarget"
 
 local glBeginEnd = gl.BeginEnd
 local glCallList = gl.CallList
@@ -113,6 +113,7 @@ local Config = {
 -- State
 --------------------------------------------------------------------------------
 local trackedProjectiles = {}     -- Active projectiles we're tracking
+local originalTargetPositions = {}
 local trackedCount = 0            -- Number of tracked projectiles (avoids pairs iteration)
 local trackedNukeCount = 0        -- Number of tracked nuke projectiles (avoids iteration)
 local fadingImpacts = {}          -- Recently impacted targets that should fade out
@@ -532,7 +533,13 @@ local function UpdateTrackedProjectiles()
 				local isAlly = (allyTeamID == myAllyTeamID)
 
 				if isSpectator or isOwnTeam then
-					local tx, ty, tz = GetProjectileTargetPos(proID)
+					local originalTargetPosition = originalTargetPositions[proID]
+					local tx, ty, tz
+					if originalTargetPosition then
+						tx, ty, tz = originalTargetPosition[1], originalTargetPosition[2], originalTargetPosition[3]
+					else
+						tx, ty, tz = GetProjectileTargetPos(proID)
+					end
 					local px, py, pz = spGetProjectilePosition(proID)
 
 					if tx and px then
@@ -543,10 +550,6 @@ local function UpdateTrackedProjectiles()
 
 						newCount = newCount + 1
 						if weaponInfo.isNuke then newNukeCount = newNukeCount + 1 end
-
-						-- Cache ground-adjusted target Y at creation (avoids per-frame API call)
-						local groundY = spGetGroundHeight(tx, tz)
-						if groundY and groundY > ty then ty = groundY end
 
 						trackedProjectiles[proID] = {
 							generation = gen,
@@ -563,6 +566,7 @@ local function UpdateTrackedProjectiles()
 							isAlly = isAlly,
 							speed = speed,
 						}
+						originalTargetPositions[proID] = nil
 					end
 				end
 			end
@@ -709,7 +713,24 @@ end
 --------------------------------------------------------------------------------
 -- Widget callins
 --------------------------------------------------------------------------------
+local function setStarburstDiveOriginalTarget(proID, targetX, targetY, targetZ)
+	if not targetX then
+		originalTargetPositions[proID] = nil
+		return
+	end
+
+	local projectileData = trackedProjectiles[proID]
+	if projectileData then
+		projectileData.targetX = targetX
+		projectileData.targetY = targetY
+		projectileData.targetZ = targetZ
+	else
+		originalTargetPositions[proID] = { targetX, targetY, targetZ }
+	end
+end
+
 function widget:Initialize()
+	widgetHandler:RegisterGlobal(ORIGINAL_TARGET_GLOBAL, setStarburstDiveOriginalTarget)
 	myAllyTeamID = spGetMyAllyTeamID()
 	myTeamID = spGetMyTeamID()
 	isSpectator = spGetSpectatingState()
@@ -720,6 +741,7 @@ function widget:Initialize()
 end
 
 function widget:Shutdown()
+	widgetHandler:DeregisterGlobal(ORIGINAL_TARGET_GLOBAL)
 	DeleteDisplayLists()
 end
 
@@ -737,6 +759,7 @@ function widget:PlayerChanged(playerID)
 	trackedNukeCount = 0
 	fadingImpacts = {}
 	fadingImpactCount = 0
+	originalTargetPositions = {}
 end
 
 function widget:Update(dt)
