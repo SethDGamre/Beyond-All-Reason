@@ -529,8 +529,8 @@ local function unitDef_Post(name, uDef)
 		uDef = proposed_unit_reworksTweaks(name, uDef)
 	end
 
-	-- Community Balance Patch
-	if modOptions.community_balance_patch ~= "disabled" then
+	-- Community Balance Patch (requires Next Season & Tryouts)
+	if modOptions.balance == "next_season_tryouts" then
 		uDef = communityBalanceTweaks(name, uDef, modOptions)
 	end
 
