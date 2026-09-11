@@ -533,51 +533,37 @@
 			}
 		},
 		"territorialDomination": {
-			"roundOverPopup": {
+			"deadlinePopup": {
 				"gameOver": "Game Over",
 				"victory": "Victory",
 				"defeat": "Defeat",
-				"round": "Round %{roundNumber}",
-				"finalRound": "Final Round",
-				"territoryWorth": "Territories are worth %{points} points each",
+				"deadline": "Deadline %{deadlineNumber}",
+				"finalDeadline": "Final Deadline",
+				"territoryRate": "Each territory now earns %{points} points per minute",
 				"eliminationBelow": "Elimination below %{threshold}!"
 			},
-			"round": {
-				"display": "Round %{currentRound}",
-				"displayWithMax": "Round %{currentRound}/%{maxRounds}",
-				"displayDefault": "Round 1/%{maxRounds}",
-				"displayMax": "Round %{maxRounds}/%{maxRounds}",
-				"overtime": "Overtime",
-				"finalRound": "Final Round"
+			"deadline": {
+				"label": "Deadline",
+				"end": "End"
 			},
 			"team": {
 				"ally": "Ally %{allyNumber}"
 			},
-			"rank": {
-				"place": " place"
-			},
-			"elimination": {
-				"aboveElimination": "%{points}pts above elimination",
-				"belowElimination": "%{points}pts below elimination",
-				"zeroAboveElimination": "0pts above elimination",
-				"eliminationsNextRound": "Eliminations next round",
-				"finalRound": "Final Round",
-				"threshold": "Elimination Threshold: %{threshold}pts"
-			},
-			"territories": {
-				"worth": "Territories are worth %{points}pts"
-			},
-			"scoreboard": {
-				"title": "Leaderboard",
-				"viewLeaderboard": "View leaderboard",
-				"headerTeam": "Team",
-				"headerScore": "Score",
-				"headerTerritories": "Territories",
-				"headerGains": "Gains",
-				"headerTotal": "Total",
-				"eliminationThreshold": "Elimination Threshold"
-			},
-			"eliminationBelow": "Elimination Below %{value}"
+			"tooltip": {
+				"territories": "Territories: %{count}",
+				"currentPoints": "Current points: %{points}",
+				"projectedPoints": "Projected points: %{points}",
+				"belowDeadline": "%{points} points below the Deadline",
+				"belowLeader": "%{points} points below the leader",
+				"place": "%{place} place",
+				"currentScore": "Current Score",
+				"deadlineScore": "Gain this many points before time runs out to avoid elimination.",
+				"highestScore": "The Highest Score",
+				"highestScoreYou": "The Highest Score (It's you!)",
+				"timeUntilNextDeadline": "Time until next deadline",
+				"timeUntilFirstDeadline": "Time until first deadline is set.",
+				"timeUntilHighestScoreWins": "Time until the highest score wins."
+			}
 		},
 		"loadScreen": {
 			"lowRamWarning": "%{textColor}Your system has below the recommended %{warnColor}12GB memory %{textColor}.     Try running with lower settings if you encounter out-of-memory crashes"
@@ -2543,7 +2529,7 @@
 				},
 				"territorial_domination": {
 					"name": "Territorial Domination",
-					"desc": "Teams earn points by capturing territory to stay in the game. At the end of the final round, the team with the most points wins."
+					"desc": "Teams continuously earn points from captured territory. At the final Deadline, the team with the most points wins."
 				},
 				"builders": {
 					"name": "Kill all Builders",
@@ -2561,29 +2547,29 @@
 		},
 		"territorial_domination_config": {
 			"name": "Territorial Domination Length",
-			"desc": "Configures the grace period and the amount of time in minutes it takes to reach the maximum required territory.",
+			"desc": "Configures the number of five-minute Deadlines and the total time before final score resolution.",
 			"items": {
 				"20_minutes": {
-					"name": "4 Rounds, 20 Minutes",
+					"name": "4 Deadlines, 20 Minutes",
 					"desc": "Early tech emphasis, comebacks very likely, elimination unlikely."
 				},
 				"25_minutes": {
-					"name": "5 Rounds, 25 Minutes(Default)",
+					"name": "5 Deadlines, 25 Minutes(Default)",
 					"desc": "Mid/late-game tech, comebacks a significant factor, eliminations uncommon"
 				},
 				"30_minutes": {
-					"name": "6 Rounds, 30 Minutes",
+					"name": "6 Deadlines, 30 Minutes",
 					"desc": "Late-game tech, comebacks less significant, eliminations likely"
 				},
 				"35_minutes": {
-					"name": "7 Rounds, 35 Minutes",
+					"name": "7 Deadlines, 35 Minutes",
 					"desc": "Super lategame tech, eliminations extremely likely"
 				}
 			}
 		},
 		"territorial_domination_elimination_threshold_multiplier": {
-			"name": "Elimination Threshold Multiplier",
-			"desc": "Teams are eliminated at round end when score < elimination threshold which is set by highest score multiplied by this value. Lower values are more lenient."
+			"name": "Deadline Score Multiplier",
+			"desc": "Teams below the Deadline score are eliminated when a Deadline ends. The next score is the leader's score multiplied by this value. Lower values are more lenient."
 		},
 		"draft_mode": {
 			"name": "Draft Spawn Order Mode",
