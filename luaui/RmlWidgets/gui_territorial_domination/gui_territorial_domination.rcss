@@ -48,6 +48,23 @@ body {
 	transition: height 0s, top 0s;
 }
 
+.td-dock-ghost {
+	position: absolute;
+	display: block;
+	width: 240dp;
+	height: 110dp;
+	box-sizing: border-box;
+	border: 1dp rgba(255, 255, 255, 180);
+	border-radius: 6dp;
+	box-shadow: 0dp 0dp 9dp 2dp rgba(255, 255, 255, 155), 0dp 0dp 20dp 5dp rgba(255, 255, 255, 70);
+	pointer-events: none;
+	z-index: 998;
+}
+
+.td-dock-ghost.expanded {
+	height: 204dp;
+}
+
 .td-panel-outer-halo.origin {
 	box-shadow: 0dp 0dp 9dp 2dp rgba(255, 255, 255, 155), 0dp 0dp 20dp 5dp rgba(255, 255, 255, 70);
 	opacity: 1;
@@ -523,6 +540,7 @@ body {
 .td-footer-countdown {
 	width: 60dp;
 	text-align: center;
+	transform-origin: 50% 50%;
 }
 
 .td-footer-target {
@@ -542,18 +560,6 @@ body {
 
 .td-footer-countdown.warning {
 	color: #ff4d4d;
-	animation: 0.5s cubic-in-out infinite td-warning-pulse;
-}
-
-@keyframes td-warning-pulse {
-	0% {
-		color: #ff7575;
-		transform: scale(1.04);
-	}
-	100% {
-		color: #d62f2f;
-		transform: scale(1);
-	}
 }
 
 .td-vertical-scroll scrollbarhorizontal {

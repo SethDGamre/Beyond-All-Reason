@@ -39,7 +39,7 @@ local DISTRIBUTION_LEFT_DP = 10
 local DISTRIBUTION_WIDTH_DP = 218
 local DISTRIBUTION_BORDER_DP = 1
 local PANEL_ORIGIN_SNAP_DISTANCE_DP = 36
-local REVERT_TO_ORIGIN_POSITION = true
+local REVERT_TO_ORIGIN_POSITION = false
 local VERTICAL_SLOT_WIDTH_DP = 26
 local VERTICAL_CONTENT_MINIMUM_WIDTH_DP = 218
 local VERTICAL_CONTENT_PADDING_DP = 6
@@ -63,6 +63,16 @@ local POPUP_DURATION_SECONDS = 5
 local POPUP_INITIAL_WINDOW_SECONDS = 10
 local DANGER_POPUP_COOLDOWN_SECONDS = 60
 local COUNTDOWN_WARNING_SECONDS = 60
+local COUNTDOWN_PULSE_START_RED = 255
+local COUNTDOWN_PULSE_START_GREEN = 117
+local COUNTDOWN_PULSE_START_BLUE = 117
+local COUNTDOWN_PULSE_END_RED = 214
+local COUNTDOWN_PULSE_END_GREEN = 47
+local COUNTDOWN_PULSE_END_BLUE = 47
+local COUNTDOWN_PULSE_START_SCALE = 1.04
+local COUNTDOWN_PULSE_END_SCALE = 1
+local COUNTDOWN_IDLE_COLOR = "rgba(255, 255, 255, 255)"
+local COUNTDOWN_IDLE_TRANSFORM = "scale(1)"
 local SECONDS_PER_MINUTE = 60
 local TERRITORY_POINTS_PER_DEADLINE = 10
 local DEADLINE_SKULL_ICON = "💀"
@@ -149,6 +159,7 @@ local widgetState = {
 	verticalContentWidthDp = VERTICAL_CONTENT_MINIMUM_WIDTH_DP,
 	localPlayerSlotCenterDp = nil,
 	appliedDistributionFillRml = nil,
+	appliedTooltipPlayersRml = nil,
 }
 
 local function clampNumber(value, minimum, maximum)
@@ -163,6 +174,18 @@ end
 
 local function roundNumber(value)
 	return math.floor(value + 0.5)
+end
+
+local function lerpNumber(fromValue, toValue, amount)
+	return fromValue + (toValue - fromValue) * amount
+end
+
+local function easeCubicInOut(amount)
+	if amount < 0.5 then
+		return 4 * amount * amount * amount
+	end
+	local inverted = -2 * amount + 2
+	return 1 - (inverted * inverted * inverted) / 2
 end
 
 local function formatScore(value)
@@ -314,25 +337,42 @@ local function getAllyTeamPlayers(allyTeamID, teamList, fallbackColor)
 	return players
 end
 
-local function copyTooltipPlayers(players)
-	local tooltipPlayers = {}
+local function escapeRmlText(value)
+	return tostring(value or ""):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+end
+
+local function buildTooltipPlayersRml(players)
 	local fallbackColor = makeColorString(DEFAULT_COLOR)
+	local fillParts = {}
 	if players then
 		for playerIndex = 1, #players do
 			local player = players[playerIndex]
-			tooltipPlayers[playerIndex] = {
-				name = player.name or "",
-				color = player.color or fallbackColor,
-			}
+			fillParts[#fillParts + 1] = string.format(
+				'<div class="td-tooltip-player" style="color: %s;">%s</div>',
+				player.color or fallbackColor,
+				escapeRmlText(player.name)
+			)
 		end
 	end
-	if #tooltipPlayers == 0 then
-		tooltipPlayers[1] = {
-			name = "",
-			color = fallbackColor,
-		}
+	return table.concat(fillParts)
+end
+
+local function applyTooltipPlayers(tooltipPlayersRml)
+	if not widgetState.document then
+		return
 	end
-	return tooltipPlayers
+
+	local playersElement = widgetState.document:GetElementById("td-tooltip-players")
+	if not playersElement then
+		widgetState.appliedTooltipPlayersRml = nil
+		return
+	end
+	if widgetState.appliedTooltipPlayersRml == tooltipPlayersRml then
+		return
+	end
+
+	playersElement.inner_rml = tooltipPlayersRml
+	widgetState.appliedTooltipPlayersRml = tooltipPlayersRml
 end
 
 local function getFirstLivingTeamID(teamList)
@@ -589,6 +629,7 @@ local function updateHaloState()
 	widgetState.dmHandle.showOriginHalo = showOriginHalo
 	widgetState.dmHandle.showFirstPlaceHalo = showFirstPlaceHalo
 	widgetState.dmHandle.showDangerHalo = showDangerHalo
+	widgetState.dmHandle.showDockGhost = widgetState.dragActive
 end
 
 local function clampPanelPosition(panelPixelX, panelPixelY)
@@ -656,6 +697,16 @@ local function getPanelOriginPosition()
 	return panelPixelX, panelPixelY
 end
 
+local function updateDockGhostPosition()
+	if not widgetState.dmHandle then
+		return
+	end
+
+	local dockGhostPixelX, dockGhostPixelY = getPanelOriginPosition()
+	widgetState.dmHandle.dockGhostLeft = tostring(roundNumber(dockGhostPixelX)) .. "px"
+	widgetState.dmHandle.dockGhostTop = tostring(roundNumber(dockGhostPixelY)) .. "px"
+end
+
 local function positionPanelAtOrigin()
 	local panelPixelX, panelPixelY = getPanelOriginPosition()
 	setPanelPosition(panelPixelX, panelPixelY)
@@ -720,6 +771,7 @@ local function updatePanelDrag()
 	else
 		clampPanelPosition(draggedPanelPixelX, draggedPanelPixelY)
 	end
+	updateDockGhostPosition()
 	updateHaloState()
 end
 
@@ -776,7 +828,7 @@ local function updateScoreTooltipContent(allyTeamID)
 	widgetState.tooltipWidthDp = TOOLTIP_WIDTH_DP
 	dataModel.tooltipIsSimple = false
 	dataModel.tooltipWidth = tostring(TOOLTIP_WIDTH_DP) .. "dp"
-	dataModel.tooltipPlayers = copyTooltipPlayers(allyTeam.players)
+	dataModel.tooltipPlayersRml = buildTooltipPlayersRml(allyTeam.players)
 	dataModel.tooltipTerritories =
 		I18N("ui.territorialDomination.tooltip.territories", { count = allyTeam.territoryCount })
 	dataModel.tooltipGainRate =
@@ -809,7 +861,7 @@ local function updateTeamTooltipContent(allyTeamID)
 	widgetState.tooltipWidthDp = TOOLTIP_WIDTH_DP
 	dataModel.tooltipIsSimple = false
 	dataModel.tooltipWidth = tostring(TOOLTIP_WIDTH_DP) .. "dp"
-	dataModel.tooltipPlayers = copyTooltipPlayers(allyTeam.players)
+	dataModel.tooltipPlayersRml = buildTooltipPlayersRml(allyTeam.players)
 	dataModel.tooltipTitle = ""
 	widgetState.tooltipRowCount = math.max(1, #allyTeam.players)
 	return true
@@ -871,7 +923,7 @@ local function updateProjectedLeaderTooltipContent()
 	dataModel.tooltipTitle = isSelectedProjectedLeader
 			and I18N("ui.territorialDomination.tooltip.highestProjectedScoreYou")
 		or I18N("ui.territorialDomination.tooltip.highestProjectedScore")
-	dataModel.tooltipPlayers = copyTooltipPlayers(projectedLeader.players)
+	dataModel.tooltipPlayersRml = buildTooltipPlayersRml(projectedLeader.players)
 	dataModel.tooltipText = ""
 	return true
 end
@@ -884,6 +936,7 @@ local function showScoreTooltip(event, allyTeamID)
 	if widgetState.dmHandle then
 		widgetState.dmHandle.tooltipIsScore = true
 		widgetState.dmHandle.tooltipVisible = widgetState.tooltipActive and widgetState.shouldShow
+		applyTooltipPlayers(widgetState.dmHandle.tooltipPlayersRml)
 	end
 	positionTooltip()
 end
@@ -896,6 +949,7 @@ local function showTeamTooltip(event, allyTeamID)
 	if widgetState.dmHandle then
 		widgetState.dmHandle.tooltipIsScore = false
 		widgetState.dmHandle.tooltipVisible = widgetState.tooltipActive and widgetState.shouldShow
+		applyTooltipPlayers(widgetState.dmHandle.tooltipPlayersRml)
 	end
 	positionTooltip()
 end
@@ -943,6 +997,7 @@ local function showTargetTooltip(event)
 	if widgetState.dmHandle then
 		widgetState.dmHandle.tooltipIsScore = false
 		widgetState.dmHandle.tooltipVisible = widgetState.tooltipActive and widgetState.shouldShow
+		applyTooltipPlayers(widgetState.dmHandle.tooltipPlayersRml)
 	end
 	positionTooltip()
 end
@@ -1034,6 +1089,7 @@ local function beginPanelDrag(event)
 		widgetState.dmHandle.isDragging = true
 	end
 	hideTooltip()
+	updateDockGhostPosition()
 	updateHaloState()
 
 	if event and event.StopPropagation then
@@ -1182,10 +1238,13 @@ local function initializeModel()
 		isExpanded = false,
 		isDragging = false,
 		showOriginHalo = false,
+		showDockGhost = false,
 		showFirstPlaceHalo = false,
 		showDangerHalo = false,
 		panelLeft = "0px",
 		panelTop = "0px",
+		dockGhostLeft = "0px",
+		dockGhostTop = "0px",
 		distributionFillRml = "",
 		selectedAllyTeamID = -1,
 		selectedProjectedWidth = "0%",
@@ -1204,6 +1263,8 @@ local function initializeModel()
 		verticalBars = {},
 		footerScore = "0",
 		countdownWarning = false,
+		countdownPulseColor = COUNTDOWN_IDLE_COLOR,
+		countdownPulseTransform = COUNTDOWN_IDLE_TRANSFORM,
 		footerCountdown = "0:00",
 		footerTargetIcon = TROPHY_ICON,
 		footerTargetValue = "0",
@@ -1216,12 +1277,7 @@ local function initializeModel()
 		tooltipIsSimple = false,
 		tooltipText = "",
 		tooltipTitle = "",
-		tooltipPlayers = {
-			{
-				name = "",
-				color = makeColorString(DEFAULT_COLOR),
-			},
-		},
+		tooltipPlayersRml = "",
 		tooltipTerritories = "",
 		tooltipGainRate = "",
 		tooltipCurrentScore = "",
@@ -1596,6 +1652,9 @@ local function updateDataModel()
 		elseif widgetState.tooltipAllyTeamID then
 			widgetState.tooltipActive = updateTeamTooltipContent(widgetState.tooltipAllyTeamID)
 		end
+		if widgetState.tooltipActive then
+			applyTooltipPlayers(dataModel.tooltipPlayersRml)
+		end
 	end
 
 	updateLeadNotification(livingLeader)
@@ -1649,11 +1708,53 @@ function WIDGET:Shutdown()
 	widgetState.dmHandle = nil
 	widgetState.rmlContext = nil
 	widgetState.appliedDistributionFillRml = nil
+	widgetState.appliedTooltipPlayersRml = nil
+end
+
+local function updateCountdownPulse()
+	local dataModel = widgetState.dmHandle
+	if not dataModel then
+		return
+	end
+
+	local countdownText, remainingSeconds = formatCountdown(
+		widgetState.deadlineEndTimestamp,
+		widgetState.currentDeadline,
+		widgetState.maxDeadlines
+	)
+	dataModel.footerCountdown = countdownText
+	local countdownWarning = widgetState.currentDeadline <= widgetState.maxDeadlines
+		and widgetState.deadlineEndTimestamp > 0
+		and remainingSeconds <= COUNTDOWN_WARNING_SECONDS
+	dataModel.countdownWarning = countdownWarning
+
+	if not countdownWarning then
+		dataModel.countdownPulseColor = COUNTDOWN_IDLE_COLOR
+		dataModel.countdownPulseTransform = COUNTDOWN_IDLE_TRANSFORM
+		return
+	end
+
+	local pulseElapsed = 1
+	if remainingSeconds > 0 then
+		pulseElapsed = math.ceil(remainingSeconds) - remainingSeconds
+	end
+	local pulseAmount = easeCubicInOut(clampNumber(pulseElapsed, 0, 1))
+	dataModel.countdownPulseColor = string.format(
+		"rgba(%d, %d, %d, 255)",
+		roundNumber(lerpNumber(COUNTDOWN_PULSE_START_RED, COUNTDOWN_PULSE_END_RED, pulseAmount)),
+		roundNumber(lerpNumber(COUNTDOWN_PULSE_START_GREEN, COUNTDOWN_PULSE_END_GREEN, pulseAmount)),
+		roundNumber(lerpNumber(COUNTDOWN_PULSE_START_BLUE, COUNTDOWN_PULSE_END_BLUE, pulseAmount))
+	)
+	dataModel.countdownPulseTransform = string.format(
+		"scale(%.4f)",
+		lerpNumber(COUNTDOWN_PULSE_START_SCALE, COUNTDOWN_PULSE_END_SCALE, pulseAmount)
+	)
 end
 
 function WIDGET:Update(deltaTime)
 	updatePanelDrag()
 	positionTooltip()
+	updateCountdownPulse()
 
 	local currentClock = os.clock()
 	local elapsedTime = tonumber(deltaTime) or math.max(0, currentClock - widgetState.lastUpdateClock)

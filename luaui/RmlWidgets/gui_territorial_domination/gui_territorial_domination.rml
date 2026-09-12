@@ -6,6 +6,13 @@
 	</head>
 	<body data-model="territorial_score_model">
 		<div
+			class="td-dock-ghost"
+			data-if="showDockGhost"
+			data-class-expanded="isExpanded"
+			data-style-left="dockGhostLeft"
+			data-style-top="dockGhostTop"
+		></div>
+		<div
 			class="td-panel-outer-halo"
 			data-if="isVisible"
 			data-class-expanded="isExpanded"
@@ -149,6 +156,8 @@
 				<div
 					class="td-footer-countdown"
 					data-class-warning="countdownWarning"
+					data-style-color="countdownPulseColor"
+					data-style-transform="countdownPulseTransform"
 					data-event-mouseover="showCountdownTooltip()"
 					data-event-mouseout="hideTooltip()"
 				>{{footerCountdown}}</div>
@@ -172,13 +181,7 @@
 			data-style-width="tooltipWidth"
 		>
 			<div class="td-tooltip-title" data-if="tooltipTitle != ''">{{tooltipTitle}}</div>
-			<div class="td-tooltip-players" data-if="!tooltipIsSimple">
-				<div
-					data-for="player : tooltipPlayers"
-					class="td-tooltip-player"
-					data-style-color="player.color"
-				>{{player.name}}</div>
-			</div>
+			<div id="td-tooltip-players" class="td-tooltip-players" data-if="!tooltipIsSimple" data-rml="tooltipPlayersRml"></div>
 			<div class="td-tooltip-score" data-if="tooltipIsScore">
 				<div class="td-tooltip-row">{{tooltipTerritories}}</div>
 				<div class="td-tooltip-row">{{tooltipGainRate}}</div>
