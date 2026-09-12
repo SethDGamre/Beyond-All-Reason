@@ -61,6 +61,7 @@ local SEGMENT_OUTLINE_COLOR_MULTIPLIER = 0.7
 local DATA_UPDATE_INTERVAL = 0.2
 local POPUP_DURATION_SECONDS = 5
 local POPUP_INITIAL_WINDOW_SECONDS = 10
+local DANGER_POPUP_COOLDOWN_SECONDS = 60
 local COUNTDOWN_WARNING_SECONDS = 60
 local SECONDS_PER_MINUTE = 60
 local TERRITORY_POINTS_PER_DEADLINE = 10
@@ -140,6 +141,8 @@ local widgetState = {
 	hasObservedDeadline = false,
 	lastObservedDeadline = 0,
 	lastWasInLead = nil,
+	lastLocalPlayerInDanger = nil,
+	lastDangerBelowGameSeconds = nil,
 	cachedTeamColors = {},
 	pendingVerticalScroll = false,
 	verticalBarsOverflow = false,
@@ -309,6 +312,27 @@ local function getAllyTeamPlayers(allyTeamID, teamList, fallbackColor)
 	end
 
 	return players
+end
+
+local function copyTooltipPlayers(players)
+	local tooltipPlayers = {}
+	local fallbackColor = makeColorString(DEFAULT_COLOR)
+	if players then
+		for playerIndex = 1, #players do
+			local player = players[playerIndex]
+			tooltipPlayers[playerIndex] = {
+				name = player.name or "",
+				color = player.color or fallbackColor,
+			}
+		end
+	end
+	if #tooltipPlayers == 0 then
+		tooltipPlayers[1] = {
+			name = "",
+			color = fallbackColor,
+		}
+	end
+	return tooltipPlayers
 end
 
 local function getFirstLivingTeamID(teamList)
@@ -752,7 +776,7 @@ local function updateScoreTooltipContent(allyTeamID)
 	widgetState.tooltipWidthDp = TOOLTIP_WIDTH_DP
 	dataModel.tooltipIsSimple = false
 	dataModel.tooltipWidth = tostring(TOOLTIP_WIDTH_DP) .. "dp"
-	dataModel.tooltipPlayers = allyTeam.players
+	dataModel.tooltipPlayers = copyTooltipPlayers(allyTeam.players)
 	dataModel.tooltipTerritories =
 		I18N("ui.territorialDomination.tooltip.territories", { count = allyTeam.territoryCount })
 	dataModel.tooltipGainRate =
@@ -785,7 +809,7 @@ local function updateTeamTooltipContent(allyTeamID)
 	widgetState.tooltipWidthDp = TOOLTIP_WIDTH_DP
 	dataModel.tooltipIsSimple = false
 	dataModel.tooltipWidth = tostring(TOOLTIP_WIDTH_DP) .. "dp"
-	dataModel.tooltipPlayers = allyTeam.players
+	dataModel.tooltipPlayers = copyTooltipPlayers(allyTeam.players)
 	dataModel.tooltipTitle = ""
 	widgetState.tooltipRowCount = math.max(1, #allyTeam.players)
 	return true
@@ -847,7 +871,7 @@ local function updateProjectedLeaderTooltipContent()
 	dataModel.tooltipTitle = isSelectedProjectedLeader
 			and I18N("ui.territorialDomination.tooltip.highestProjectedScoreYou")
 		or I18N("ui.territorialDomination.tooltip.highestProjectedScore")
-	dataModel.tooltipPlayers = projectedLeader.players
+	dataModel.tooltipPlayers = copyTooltipPlayers(projectedLeader.players)
 	dataModel.tooltipText = ""
 	return true
 end
@@ -1192,7 +1216,12 @@ local function initializeModel()
 		tooltipIsSimple = false,
 		tooltipText = "",
 		tooltipTitle = "",
-		tooltipPlayers = {},
+		tooltipPlayers = {
+			{
+				name = "",
+				color = makeColorString(DEFAULT_COLOR),
+			},
+		},
 		tooltipTerritories = "",
 		tooltipGainRate = "",
 		tooltipCurrentScore = "",
@@ -1292,32 +1321,14 @@ local function getFinalPopupTitle(allyTeams, livingLeader)
 	return I18N("ui.territorialDomination.deadlinePopup.defeat")
 end
 
-local function showDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, allyTeams, livingLeader)
+local function showPopup(title, rateText, deadlineText)
 	if not widgetState.dmHandle then
 		return
 	end
 
-	if currentDeadline > maxDeadlines then
-		widgetState.dmHandle.popupTitle = getFinalPopupTitle(allyTeams, livingLeader)
-		widgetState.dmHandle.popupRateText = ""
-		widgetState.dmHandle.popupDeadlineText = ""
-	else
-		if currentDeadline == maxDeadlines then
-			widgetState.dmHandle.popupTitle = I18N("ui.territorialDomination.deadlinePopup.finalDeadline")
-		else
-			widgetState.dmHandle.popupTitle =
-				I18N("ui.territorialDomination.deadlinePopup.deadline", { deadlineNumber = currentDeadline })
-		end
-		widgetState.dmHandle.popupRateText =
-			I18N("ui.territorialDomination.deadlinePopup.territoryRate", { points = formatScore(currentDeadline * TERRITORY_POINTS_PER_DEADLINE) })
-		widgetState.dmHandle.popupDeadlineText = (deadlineScore > 0 and currentDeadline < maxDeadlines)
-				and I18N(
-					"ui.territorialDomination.deadlinePopup.eliminationBelow",
-					{ threshold = formatScore(deadlineScore) }
-				)
-			or ""
-	end
-
+	widgetState.dmHandle.popupTitle = title
+	widgetState.dmHandle.popupRateText = rateText or ""
+	widgetState.dmHandle.popupDeadlineText = deadlineText or ""
 	widgetState.popupActive = true
 	widgetState.popupStartClock = os.clock()
 	local shouldShow = getShouldShow()
@@ -1326,8 +1337,34 @@ local function showDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, a
 	if shouldShow then
 		Spring.PlaySoundFile("sounds/global-events/scavlootdrop.wav", 0.8, "ui")
 		Spring.PlaySoundFile("sounds/replies/servlrg3.wav", 1, "ui")
-			end
+	end
+end
+
+local function showDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, allyTeams, livingLeader)
+	local title
+	local rateText = ""
+	local deadlineText = ""
+
+	if currentDeadline > maxDeadlines then
+		title = getFinalPopupTitle(allyTeams, livingLeader)
+	else
+		if currentDeadline == maxDeadlines then
+			title = I18N("ui.territorialDomination.deadlinePopup.finalDeadline")
+		else
+			title = I18N("ui.territorialDomination.deadlinePopup.deadline", { deadlineNumber = currentDeadline })
 		end
+		rateText =
+			I18N("ui.territorialDomination.deadlinePopup.territoryRate", { points = formatScore(currentDeadline * TERRITORY_POINTS_PER_DEADLINE) })
+		if deadlineScore > 0 and currentDeadline < maxDeadlines then
+			deadlineText = I18N(
+				"ui.territorialDomination.deadlinePopup.eliminationBelow",
+				{ threshold = formatScore(deadlineScore) }
+			)
+		end
+	end
+
+	showPopup(title, rateText, deadlineText)
+end
 
 local function updateDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, allyTeams, livingLeader)
 	if currentDeadline <= 0 or maxDeadlines <= 0 or Spring.GetGameSeconds() <= 0 then
@@ -1377,6 +1414,60 @@ local function updateLeadNotification(livingLeader)
 			end
 		end
 		widgetState.lastWasInLead = isInLead
+	end
+end
+
+local function isLocalPlayerInDanger(localAllyTeam, hasDeadline, deadlineScore, currentDeadline, maxDeadlines)
+	if Spring.GetSpectatingState() or not localAllyTeam or not localAllyTeam.isAlive then
+		return false
+	end
+	if localAllyTeam.rank == 1 then
+		return false
+	end
+	return (hasDeadline and localAllyTeam.projectedScore < deadlineScore) or (currentDeadline >= maxDeadlines)
+end
+
+local function updateDangerPopup(hasDeadline, deadlineScore, currentDeadline, maxDeadlines)
+	local localAllyTeam = widgetState.allyTeamsByID[Spring.GetLocalAllyTeamID()]
+	if Spring.GetSpectatingState() or not localAllyTeam then
+		widgetState.lastLocalPlayerInDanger = nil
+		return
+	end
+
+	local inDanger = isLocalPlayerInDanger(localAllyTeam, hasDeadline, deadlineScore, currentDeadline, maxDeadlines)
+	local gameSeconds = Spring.GetGameSeconds()
+
+	if widgetState.lastLocalPlayerInDanger == nil then
+		widgetState.lastLocalPlayerInDanger = inDanger
+		if inDanger then
+			widgetState.lastDangerBelowGameSeconds = gameSeconds
+		end
+		return
+	end
+
+	if inDanger and not widgetState.lastLocalPlayerInDanger then
+		local lastBelow = widgetState.lastDangerBelowGameSeconds
+		local cooldownElapsed = lastBelow == nil or (gameSeconds - lastBelow) >= DANGER_POPUP_COOLDOWN_SECONDS
+		if cooldownElapsed then
+			if WG.notifications and WG.notifications.addEvent then
+				WG.notifications.addEvent("TerritorialDomination/EliminationDanger", false)
+			end
+			if not widgetState.popupActive then
+				local deadlineText = ""
+				if hasDeadline then
+					deadlineText = I18N(
+						"ui.territorialDomination.deadlinePopup.eliminationBelow",
+						{ threshold = formatScore(deadlineScore) }
+					)
+				end
+				showPopup(I18N("ui.territorialDomination.deadlinePopup.eliminationDanger"), "", deadlineText)
+			end
+		end
+	end
+
+	widgetState.lastLocalPlayerInDanger = inDanger
+	if inDanger then
+		widgetState.lastDangerBelowGameSeconds = gameSeconds
 	end
 end
 
@@ -1509,6 +1600,7 @@ local function updateDataModel()
 
 	updateLeadNotification(livingLeader)
 	updateDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, allyTeams, livingLeader)
+	updateDangerPopup(hasDeadline, deadlineScore, currentDeadline, maxDeadlines)
 end
 
 function WIDGET:Initialize()

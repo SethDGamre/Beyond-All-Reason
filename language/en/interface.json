@@ -540,7 +540,8 @@
 				"deadline": "Deadline %{deadlineNumber}",
 				"finalDeadline": "Final Deadline",
 				"territoryRate": "Each territory earns %{points} points per minute",
-				"eliminationBelow": "Elimination below %{threshold}!"
+				"eliminationBelow": "Elimination below %{threshold}!",
+				"eliminationDanger": "You're in danger of being eliminated!"
 			},
 			"deadline": {
 				"label": "Deadline",
