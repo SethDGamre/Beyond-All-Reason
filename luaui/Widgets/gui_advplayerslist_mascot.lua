@@ -581,6 +581,7 @@ end
 
 function widget:Shutdown()
 	widgetHandler:RemoveAction("mascot", "t")
+	WG.advplayerlist_mascot = nil
 	for i = 1, 4 do
 		if drawlist[i] then
 			glDeleteList(drawlist[i])
