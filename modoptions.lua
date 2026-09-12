@@ -210,8 +210,8 @@ local options = {
 	-- NOTE: update language/en/interface.json when you change name or desc
 	{
 		key = "territorial_domination_elimination_threshold_multiplier",
-		name = "Deadline Score Multiplier",
-		desc = "Teams below the Deadline score are eliminated when a Deadline ends. The next score is the leader's score multiplied by this value. Lower values are more lenient.",
+		name = "Deadline Multiplier",
+		desc = "Teams below the Deadline value are eliminated when a Deadline ends. The next Deadline value is the leader's score multiplied by this value. Lower values are more lenient.",
 		type = "number",
 		def = 1.2,
 		min = 1.0,
