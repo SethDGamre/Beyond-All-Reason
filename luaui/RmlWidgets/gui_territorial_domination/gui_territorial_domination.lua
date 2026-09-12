@@ -52,6 +52,7 @@ local TOOLTIP_CURRENT_SCORE_WIDTH_DP = 145
 local TOOLTIP_COUNTDOWN_WIDTH_DP = 310
 local TOOLTIP_TARGET_WIDTH_DP = 520
 local TOOLTIP_DANGER_WIDTH_DP = 360
+local TOOLTIP_DEADLINE_WIDTH_DP = 360
 local TOOLTIP_OFFSET_X = 16
 local TOOLTIP_OFFSET_Y = 22
 local POSITION_SCALE = 10000
@@ -84,6 +85,7 @@ local TOOLTIP_SOURCE_CURRENT_SCORE = "currentScore"
 local TOOLTIP_SOURCE_COUNTDOWN = "countdown"
 local TOOLTIP_SOURCE_TARGET = "target"
 local TOOLTIP_SOURCE_DANGER = "danger"
+local TOOLTIP_SOURCE_DEADLINE = "deadline"
 local DEFAULT_COLOR = {
 	red = 0.5,
 	green = 0.5,
@@ -561,7 +563,7 @@ local function buildDistributionData(allyTeams)
 	return table.concat(fillParts), distributionHits, ascendingAllyTeams
 end
 
-local function buildVerticalBars(ascendingAllyTeams, verticalScale, localAllyTeamID)
+local function buildVerticalBars(ascendingAllyTeams, verticalScale, localAllyTeamID, hasDeadline, deadlineScore, currentDeadline, maxDeadlines)
 	local verticalBars = {}
 	local allyTeamCount = #ascendingAllyTeams
 	local packedWidth = allyTeamCount * VERTICAL_SLOT_WIDTH_DP + VERTICAL_CONTENT_PADDING_DP
@@ -572,6 +574,8 @@ local function buildVerticalBars(ascendingAllyTeams, verticalScale, localAllyTea
 	local sidePadding = VERTICAL_CONTENT_PADDING_DP / 2
 	local localPlayerSlotCenterDp = nil
 	local isSpectating = Spring.GetSpectatingState()
+	local isFinalRound = currentDeadline >= maxDeadlines
+	local deadlinePercent = clampNumber(deadlineScore / math.max(1, verticalScale) * 100, 0, 100)
 
 	for allyTeamIndex = 1, allyTeamCount do
 		local allyTeam = ascendingAllyTeams[allyTeamIndex]
@@ -579,16 +583,26 @@ local function buildVerticalBars(ascendingAllyTeams, verticalScale, localAllyTea
 		if allyTeam.allyTeamID == localAllyTeamID then
 			localPlayerSlotCenterDp = slotLeft + VERTICAL_SLOT_WIDTH_DP / 2
 		end
+		local projectedPercent = clampNumber(allyTeam.projectedScore / math.max(1, verticalScale) * 100, 0, 100)
+		local overlayTopPercent = hasDeadline and deadlinePercent or 100
+		local overlayHeightPercent = math.max(0, overlayTopPercent - projectedPercent)
+		local showDangerOverlay = allyTeam.isAlive
+			and allyTeam.rank ~= 1
+			and overlayHeightPercent > 0
+			and ((hasDeadline and allyTeam.projectedScore < deadlineScore) or isFinalRound)
 		verticalBars[#verticalBars + 1] = {
 			allyTeamID = allyTeam.allyTeamID,
 			rank = formatOrdinal(allyTeam.rank),
 			isAlive = allyTeam.isAlive,
 			isLocalPlayer = not isSpectating and allyTeam.allyTeamID == localAllyTeamID,
-			projectedHeight = formatPercentage(allyTeam.projectedScore / verticalScale * 100),
+			projectedHeight = formatPercentage(projectedPercent),
 			darkColor = allyTeam.darkColor,
-			actualHeight = formatPercentage(allyTeam.score / verticalScale * 100),
+			actualHeight = formatPercentage(allyTeam.score / math.max(1, verticalScale) * 100),
 			color = allyTeam.color,
 			slotLeft = string.format("%.3fdp", slotLeft),
+			showDangerOverlay = showDangerOverlay,
+			dangerOverlayBottom = formatPercentage(projectedPercent),
+			dangerOverlayHeight = formatPercentage(overlayHeightPercent),
 		}
 	end
 
@@ -894,6 +908,9 @@ local function updateSimpleTooltipContent()
 	elseif widgetState.tooltipSimpleSource == TOOLTIP_SOURCE_DANGER then
 		tooltipText = dataModel.dangerMarkTooltip
 		tooltipWidthDp = TOOLTIP_DANGER_WIDTH_DP
+	elseif widgetState.tooltipSimpleSource == TOOLTIP_SOURCE_DEADLINE then
+		tooltipText = dataModel.deadlineLineTooltip
+		tooltipWidthDp = TOOLTIP_DEADLINE_WIDTH_DP
 	else
 		return false
 	end
@@ -998,7 +1015,7 @@ end
 
 local function showTargetTooltip(event)
 	if widgetState.isBelowDeadline then
-		showSimpleTooltip(TOOLTIP_SOURCE_TARGET)
+		showSimpleTooltip(TOOLTIP_SOURCE_DEADLINE)
 		return
 	end
 
@@ -1014,6 +1031,10 @@ local function showTargetTooltip(event)
 		applyTooltipPlayers(widgetState.dmHandle.tooltipPlayersRml)
 	end
 	positionTooltip()
+end
+
+local function showDeadlineLineTooltip(event)
+	showSimpleTooltip(TOOLTIP_SOURCE_DEADLINE)
 end
 
 local function hideTooltip(event)
@@ -1184,6 +1205,7 @@ local function setExpandedState(isExpanded)
 	widgetState.pendingVerticalScroll = isExpanded
 	if widgetState.dmHandle then
 		widgetState.dmHandle.isExpanded = widgetState.isExpanded
+		widgetState.dmHandle.showHorizontalDangerOutline = widgetState.dmHandle.showDangerMark and not widgetState.isExpanded
 	end
 	if REVERT_TO_ORIGIN_POSITION or not widgetState.hasUserPosition then
 		positionPanelAtOrigin()
@@ -1266,6 +1288,7 @@ local function initializeModel()
 		selectedActualWidth = "0%",
 		selectedColor = makeColorString(DEFAULT_COLOR),
 		showDangerMark = false,
+		showHorizontalDangerOutline = false,
 		dangerOverlayWidth = "100%",
 		hasDeadline = false,
 		isBelowDeadline = false,
@@ -1309,6 +1332,7 @@ local function initializeModel()
 		footerCountdownTooltip = I18N("ui.territorialDomination.tooltip.timeUntilFirstDeadline"),
 		footerTargetTooltip = I18N("ui.territorialDomination.tooltip.highestScore"),
 		dangerMarkTooltip = I18N("ui.territorialDomination.tooltip.eliminationDanger"),
+		deadlineLineTooltip = I18N("ui.territorialDomination.tooltip.deadlineScore"),
 		popupVisible = false,
 		popupTitle = "",
 		popupRateText = "",
@@ -1324,6 +1348,7 @@ local function initializeModel()
 		showCurrentScoreTooltip = showCurrentScoreTooltip,
 		showCountdownTooltip = showCountdownTooltip,
 		showTargetTooltip = showTargetTooltip,
+		showDeadlineLineTooltip = showDeadlineLineTooltip,
 		showDangerMarkTooltip = showDangerMarkTooltip,
 		hideDangerMarkTooltip = hideDangerMarkTooltip,
 	}
@@ -1602,7 +1627,15 @@ local function updateDataModel()
 	updateHaloState()
 
 	local verticalBars, verticalBarsOverflow, verticalContentWidth, localPlayerSlotCenterDp =
-		buildVerticalBars(ascendingAllyTeams, verticalScale, Spring.GetLocalAllyTeamID())
+		buildVerticalBars(
+			ascendingAllyTeams,
+			verticalScale,
+			Spring.GetLocalAllyTeamID(),
+			hasDeadline,
+			deadlineScore,
+			currentDeadline,
+			maxDeadlines
+		)
 
 	widgetState.distributionHits = distributionHits
 	widgetState.verticalBarsOverflow = verticalBarsOverflow
@@ -1620,6 +1653,7 @@ local function updateDataModel()
 	dataModel.selectedActualWidth = formatPercentage(selectedScore / horizontalScale * 100)
 	dataModel.selectedProjectedWidth = formatPercentage(selectedProjectedPercent)
 	dataModel.showDangerMark = widgetState.isInDanger and selectedAllyTeam ~= nil and selectedAllyTeam.isAlive
+	dataModel.showHorizontalDangerOutline = dataModel.showDangerMark and not widgetState.isExpanded
 	dataModel.dangerOverlayWidth = formatPercentage(100 - selectedProjectedPercent)
 	dataModel.hasDeadline = hasDeadline
 	dataModel.isBelowDeadline = isBelowDeadline
@@ -1632,6 +1666,7 @@ local function updateDataModel()
 	dataModel.footerScore = formatScore(selectedScore)
 	dataModel.footerScoreTooltip = I18N("ui.territorialDomination.tooltip.currentScore")
 	dataModel.dangerMarkTooltip = I18N("ui.territorialDomination.tooltip.eliminationDanger")
+	dataModel.deadlineLineTooltip = I18N("ui.territorialDomination.tooltip.deadlineScore")
 
 	local countdownText, remainingSeconds = formatCountdown(deadlineEndTimestamp, currentDeadline, maxDeadlines)
 	dataModel.footerCountdown = countdownText

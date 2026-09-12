@@ -245,6 +245,22 @@ body {
 	z-index: 3;
 }
 
+.td-horizontal-danger-outline {
+	position: absolute;
+	display: block;
+	left: 10dp;
+	top: 30.333dp;
+	width: 218dp;
+	height: 24dp;
+	box-sizing: border-box;
+	border: 1dp rgba(245, 45, 45, 230);
+	border-radius: 4dp;
+	box-shadow: 0dp 0dp 6dp 1dp rgba(245, 45, 45, 170), 0dp 0dp 12dp 3dp rgba(225, 25, 25, 80);
+	pointer-events: none;
+	z-index: 4;
+	animation: 1.2s cubic-in-out infinite td-danger-halo-pulse;
+}
+
 .td-horizontal-projected,
 .td-horizontal-actual {
 	position: absolute;
@@ -273,38 +289,7 @@ body {
 	pointer-events: auto;
 	cursor: default;
 	z-index: 4;
-	opacity: 0;
-	animation: 3.2s linear infinite td-danger-overlay-pulse;
-}
-
-@keyframes td-danger-overlay-pulse {
-	0% {
-		opacity: 0;
-	}
-	12.5% {
-		opacity: 0.146;
-	}
-	25% {
-		opacity: 0.5;
-	}
-	37.5% {
-		opacity: 0.854;
-	}
-	50% {
-		opacity: 1;
-	}
-	62.5% {
-		opacity: 0.854;
-	}
-	75% {
-		opacity: 0.5;
-	}
-	87.5% {
-		opacity: 0.146;
-	}
-	100% {
-		opacity: 0;
-	}
+	opacity: 1;
 }
 
 .td-expanded-chart {
@@ -376,7 +361,8 @@ body {
 }
 
 .td-vertical-track,
-.td-vertical-local-outline {
+.td-vertical-local-outline,
+.td-vertical-danger-outline {
 	position: absolute;
 	display: block;
 	left: 50%;
@@ -403,6 +389,14 @@ body {
 .td-vertical-local-outline {
 	pointer-events: none;
 	z-index: 5;
+}
+
+.td-vertical-danger-outline {
+	pointer-events: none;
+	z-index: 6;
+	border-color: rgba(245, 45, 45, 230);
+	box-shadow: 0dp 0dp 6dp 1dp rgba(245, 45, 45, 170), 0dp 0dp 12dp 3dp rgba(225, 25, 25, 80);
+	animation: 1.2s cubic-in-out infinite td-danger-halo-pulse;
 }
 
 .td-vertical-track:hover {
@@ -443,6 +437,18 @@ body {
 	z-index: 3;
 }
 
+.td-vertical-danger-overlay {
+	position: absolute;
+	display: block;
+	left: 0;
+	width: 100%;
+	decorator: image("/luaui/images/stripes-small.png" repeat);
+	image-color: rgba(255, 40, 40, 255);
+	pointer-events: none;
+	z-index: 4;
+	opacity: 1;
+}
+
 .td-deadline-marker {
 	position: absolute;
 	display: block;
@@ -480,12 +486,12 @@ body {
 	position: absolute;
 	display: block;
 	left: 2dp;
-	width: 22dp;
-	height: 18dp;
+	width: 27.5dp;
+	height: 22.5dp;
 	color: #ff3030;
-	font-size: 15dp;
+	font-size: 18.75dp;
 	font-weight: bold;
-	line-height: 18dp;
+	line-height: 22.5dp;
 	text-align: left;
 	font-effect: outline(1dp rgba(0, 0, 0, 245));
 	pointer-events: auto;
@@ -581,17 +587,17 @@ body {
 
 .td-vertical-scroll scrollbarhorizontal sliderbar {
 	min-width: 24dp;
-	background-color: rgba(255, 255, 255, 65);
+	background-color: rgba(255, 255, 255, 140);
 	border-radius: 3dp;
 	cursor: default;
 }
 
 .td-vertical-scroll scrollbarhorizontal sliderbar:hover {
-	background-color: rgba(255, 205, 80, 205);
+	background-color: rgba(255, 255, 255, 255);
 }
 
 .td-vertical-scroll scrollbarhorizontal sliderbar:active {
-	background-color: rgba(255, 205, 80, 255);
+	background-color: rgba(255, 255, 255, 255);
 }
 
 .td-tooltip {

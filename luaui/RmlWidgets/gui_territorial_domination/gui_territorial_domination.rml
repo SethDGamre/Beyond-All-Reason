@@ -84,18 +84,19 @@
 					data-event-mouseout="hideDangerMarkTooltip()"
 				></div>
 			</div>
+			<div class="td-horizontal-danger-outline" data-if="showHorizontalDangerOutline"></div>
 
 			<div class="td-expanded-chart" data-if="isExpanded">
 				<div class="td-deadline-marker" data-if="hasDeadline" data-style-bottom="deadlineLineBottom">
 					<div
 						class="td-deadline-label"
 						data-style-bottom="deadlineLabelBottom"
-						data-event-mouseover="showTargetTooltip()"
+						data-event-mouseover="showDeadlineLineTooltip()"
 						data-event-mouseout="hideTooltip()"
 					>{{deadlineLabel}}</div>
 					<div
 						class="td-deadline-hotspot"
-						data-event-mouseover="showTargetTooltip()"
+						data-event-mouseover="showDeadlineLineTooltip()"
 						data-event-mouseout="hideTooltip()"
 					>
 						<div class="td-deadline-line"></div>
@@ -133,11 +134,21 @@
 									data-style-background-color="score.color"
 								></div>
 								<div class="td-vertical-gloss"></div>
+								<div
+									class="td-vertical-danger-overlay"
+									data-if="score.showDangerOverlay"
+									data-style-bottom="score.dangerOverlayBottom"
+									data-style-height="score.dangerOverlayHeight"
+								></div>
 							</div>
 							<div
 								class="td-vertical-local-outline"
 								data-if="score.isLocalPlayer"
 								data-style-border-color="score.color"
+							></div>
+							<div
+								class="td-vertical-danger-outline"
+								data-if="score.showDangerOverlay"
 							></div>
 						</div>
 					</div>

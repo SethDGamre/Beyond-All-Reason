@@ -560,7 +560,7 @@
 				"team": "Team",
 				"place": "%{place} place",
 				"currentScore": "Current Score",
-				"deadlineScore": "Gain this many points before time runs out to avoid elimination.",
+				"deadlineScore": "Get this many points or be eliminated",
 				"highestScore": "The Highest Score",
 				"highestScoreYou": "The Highest Score (It's you!)",
 				"highestProjectedScore": "This will be the highest score at the end of this deadline",
