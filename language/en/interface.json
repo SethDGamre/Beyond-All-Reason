@@ -557,6 +557,7 @@
 				"projectedPoints": "Projected points: %{points}",
 				"belowDeadline": "%{points} points below the Deadline",
 				"belowLeader": "%{points} points below the leader",
+				"team": "Team",
 				"place": "%{place} place",
 				"currentScore": "Current Score",
 				"deadlineScore": "Gain this many points before time runs out to avoid elimination.",

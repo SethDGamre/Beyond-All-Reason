@@ -841,11 +841,14 @@ local function updateScoreTooltipContent(allyTeamID)
 	dataModel.tooltipDeadlineDifference =
 		I18N("ui.territorialDomination.tooltip.belowDeadline", { points = formatScore(pointsBelowDeadline) })
 	dataModel.tooltipShowLeader = showLeader
+	dataModel.tooltipShowTeam = true
+	dataModel.tooltipTeamLabel = I18N("ui.territorialDomination.tooltip.team")
+	dataModel.tooltipTeamColor = allyTeam.color
 	dataModel.tooltipLeaderDifference =
 		I18N("ui.territorialDomination.tooltip.belowLeader", { points = formatScore(pointsBelowLeader) })
 	dataModel.tooltipLeaderColor = leader.color
 	dataModel.tooltipTitle = ""
-	widgetState.tooltipRowCount = #allyTeam.players + 4 + (showDeadline and 1 or 0) + (showLeader and 1 or 0)
+	widgetState.tooltipRowCount = #allyTeam.players + 5 + (showDeadline and 1 or 0) + (showLeader and 1 or 0)
 	return true
 end
 
@@ -863,7 +866,11 @@ local function updateTeamTooltipContent(allyTeamID)
 	dataModel.tooltipWidth = tostring(TOOLTIP_WIDTH_DP) .. "dp"
 	dataModel.tooltipPlayersRml = buildTooltipPlayersRml(allyTeam.players)
 	dataModel.tooltipTitle = ""
-	widgetState.tooltipRowCount = math.max(1, #allyTeam.players)
+	dataModel.tooltipShowTeam = true
+	dataModel.tooltipShowLeader = false
+	dataModel.tooltipTeamLabel = I18N("ui.territorialDomination.tooltip.team")
+	dataModel.tooltipTeamColor = allyTeam.color
+	widgetState.tooltipRowCount = math.max(2, #allyTeam.players + 1)
 	return true
 end
 
@@ -897,6 +904,8 @@ local function updateSimpleTooltipContent()
 	dataModel.tooltipIsScore = false
 	dataModel.tooltipText = tooltipText
 	dataModel.tooltipTitle = ""
+	dataModel.tooltipShowTeam = false
+	dataModel.tooltipShowLeader = false
 	dataModel.tooltipWidth = tostring(tooltipWidthDp) .. "dp"
 	return true
 end
@@ -916,13 +925,18 @@ local function updateProjectedLeaderTooltipContent()
 	widgetState.tooltipIsScore = false
 	widgetState.tooltipSimpleSource = TOOLTIP_SOURCE_TARGET
 	widgetState.tooltipWidthDp = TOOLTIP_TARGET_WIDTH_DP
-	widgetState.tooltipRowCount = 2 + math.max(1, #projectedLeader.players)
+	widgetState.tooltipRowCount = 3 + math.max(1, #projectedLeader.players)
 	dataModel.tooltipIsSimple = false
 	dataModel.tooltipIsScore = false
 	dataModel.tooltipWidth = tostring(TOOLTIP_TARGET_WIDTH_DP) .. "dp"
 	dataModel.tooltipTitle = isSelectedProjectedLeader
 			and I18N("ui.territorialDomination.tooltip.highestProjectedScoreYou")
 		or I18N("ui.territorialDomination.tooltip.highestProjectedScore")
+	dataModel.tooltipShowTeam = true
+	dataModel.tooltipShowLeader = false
+	dataModel.tooltipTeamLabel = I18N("ui.territorialDomination.tooltip.team")
+	dataModel.tooltipTeamColor = projectedLeader.color
+	dataModel.tooltipLeaderColor = projectedLeader.color
 	dataModel.tooltipPlayersRml = buildTooltipPlayersRml(projectedLeader.players)
 	dataModel.tooltipText = ""
 	return true
@@ -1285,6 +1299,9 @@ local function initializeModel()
 		tooltipShowDeadline = false,
 		tooltipDeadlineDifference = "",
 		tooltipShowLeader = false,
+		tooltipShowTeam = false,
+		tooltipTeamLabel = "",
+		tooltipTeamColor = makeColorString(DEFAULT_COLOR),
 		tooltipLeaderDifference = "",
 		tooltipLeaderColor = makeColorString(DEFAULT_COLOR),
 		tooltipPlace = "",

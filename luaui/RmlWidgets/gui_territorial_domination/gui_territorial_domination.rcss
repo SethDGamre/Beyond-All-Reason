@@ -640,8 +640,11 @@ body {
 	white-space: nowrap;
 }
 
-.td-tooltip-leader-row {
+.td-tooltip-leader-row,
+.td-tooltip-team-row {
 	display: flex;
+	flex-direction: row;
+	align-items: center;
 	width: 100%;
 	height: 22dp;
 }
@@ -649,6 +652,12 @@ body {
 .td-tooltip-leader-row > span:first-child {
 	display: block;
 	flex: 1;
+}
+
+.td-tooltip-team-label {
+	display: block;
+	margin-right: 4dp;
+	flex-shrink: 0;
 }
 
 .td-allyteam-color {
@@ -661,10 +670,6 @@ body {
 	line-height: 14dp;
 	border: 1dp rgba(255, 255, 255, 130);
 	border-radius: 14dp;
-}
-
-.td-tooltip-leader-row .td-allyteam-color {
-	margin-top: 3dp;
 }
 
 .td-popup {
