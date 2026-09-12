@@ -43,23 +43,25 @@ local REVERT_TO_ORIGIN_POSITION = true
 local VERTICAL_SLOT_WIDTH_DP = 26
 local VERTICAL_CONTENT_MINIMUM_WIDTH_DP = 218
 local VERTICAL_CONTENT_PADDING_DP = 6
-local VERTICAL_TRACK_HEIGHT_DP = 112
-local VERTICAL_TRACK_BOTTOM_DP = 24
+local VERTICAL_TRACK_HEIGHT_DP = 124
+local VERTICAL_TRACK_BOTTOM_DP = 12
 local TOOLTIP_WIDTH_DP = 300
 local TOOLTIP_VERTICAL_PADDING_DP = 16
 local TOOLTIP_ROW_HEIGHT_DP = 22
 local TOOLTIP_CURRENT_SCORE_WIDTH_DP = 145
 local TOOLTIP_COUNTDOWN_WIDTH_DP = 310
 local TOOLTIP_TARGET_WIDTH_DP = 520
+local TOOLTIP_DANGER_WIDTH_DP = 360
 local TOOLTIP_OFFSET_X = 16
 local TOOLTIP_OFFSET_Y = 22
 local POSITION_SCALE = 10000
 local COLOR_BYTE_MAXIMUM = 255
 local DARK_COLOR_MULTIPLIER = 0.48
+local SEGMENT_OUTLINE_COLOR_MULTIPLIER = 0.7
 local DATA_UPDATE_INTERVAL = 0.2
 local POPUP_DURATION_SECONDS = 5
 local POPUP_INITIAL_WINDOW_SECONDS = 10
-local COUNTDOWN_WARNING_SECONDS = 10
+local COUNTDOWN_WARNING_SECONDS = 60
 local SECONDS_PER_MINUTE = 60
 local TERRITORY_POINTS_PER_DEADLINE = 10
 local DEADLINE_SKULL_ICON = "💀"
@@ -70,6 +72,7 @@ local KEY_ESCAPE = 27
 local TOOLTIP_SOURCE_CURRENT_SCORE = "currentScore"
 local TOOLTIP_SOURCE_COUNTDOWN = "countdown"
 local TOOLTIP_SOURCE_TARGET = "target"
+local TOOLTIP_SOURCE_DANGER = "danger"
 local DEFAULT_COLOR = {
 	red = 0.5,
 	green = 0.5,
@@ -371,6 +374,7 @@ local function collectAllyTeamData()
 					firstLivingTeamID = firstLivingTeamID,
 					color = makeColorString(color),
 					darkColor = makeColorString(color, DARK_COLOR_MULTIPLIER),
+					outlineColor = makeColorString(color, SEGMENT_OUTLINE_COLOR_MULTIPLIER),
 				}
 				allyTeams[#allyTeams + 1] = allyTeamData
 				allyTeamsByID[allyTeamID] = allyTeamData
@@ -476,10 +480,11 @@ local function buildDistributionData(allyTeams)
 			width = math.max(0, 100 - startPercentage)
 		end
 		fillParts[#fillParts + 1] = string.format(
-			'<div class="td-distribution-segment" style="flex: %.6f; width: %.3f%%; height: 100%%; background-color: %s;"></div>',
+			'<div class="td-distribution-segment" style="flex: %.6f; width: %.3f%%; height: 100%%; background-color: %s; box-shadow: inset 0px 0px 0px 1px %s;"></div>',
 			flexGrow,
 			width,
-			allyTeam.color
+			allyTeam.color,
+			allyTeam.outlineColor
 		)
 		distributionHits[#distributionHits + 1] = {
 			allyTeamID = allyTeam.allyTeamID,
@@ -502,6 +507,7 @@ local function buildVerticalBars(ascendingAllyTeams, verticalScale, localAllyTea
 	local gap = allyTeamCount > 0 and extraSpace / (allyTeamCount + 1) or 0
 	local sidePadding = VERTICAL_CONTENT_PADDING_DP / 2
 	local localPlayerSlotCenterDp = nil
+	local isSpectating = Spring.GetSpectatingState()
 
 	for allyTeamIndex = 1, allyTeamCount do
 		local allyTeam = ascendingAllyTeams[allyTeamIndex]
@@ -513,11 +519,11 @@ local function buildVerticalBars(ascendingAllyTeams, verticalScale, localAllyTea
 			allyTeamID = allyTeam.allyTeamID,
 			rank = formatOrdinal(allyTeam.rank),
 			isAlive = allyTeam.isAlive,
+			isLocalPlayer = not isSpectating and allyTeam.allyTeamID == localAllyTeamID,
 			projectedHeight = formatPercentage(allyTeam.projectedScore / verticalScale * 100),
 			darkColor = allyTeam.darkColor,
 			actualHeight = formatPercentage(allyTeam.score / verticalScale * 100),
 			color = allyTeam.color,
-			score = formatScore(allyTeam.score),
 			slotLeft = string.format("%.3fdp", slotLeft),
 		}
 	end
@@ -802,6 +808,9 @@ local function updateSimpleTooltipContent()
 	elseif widgetState.tooltipSimpleSource == TOOLTIP_SOURCE_TARGET then
 		tooltipText = dataModel.footerTargetTooltip
 		tooltipWidthDp = TOOLTIP_TARGET_WIDTH_DP
+	elseif widgetState.tooltipSimpleSource == TOOLTIP_SOURCE_DANGER then
+		tooltipText = dataModel.dangerMarkTooltip
+		tooltipWidthDp = TOOLTIP_DANGER_WIDTH_DP
 	else
 		return false
 	end
@@ -880,6 +889,13 @@ local function showSimpleTooltip(tooltipSource)
 	positionTooltip()
 end
 
+local function showDangerMarkTooltip(event)
+	showSimpleTooltip(TOOLTIP_SOURCE_DANGER)
+	if event and event.StopPropagation then
+		event:StopPropagation()
+	end
+end
+
 local function showCurrentScoreTooltip(event)
 	showSimpleTooltip(TOOLTIP_SOURCE_CURRENT_SCORE)
 end
@@ -913,6 +929,14 @@ local function hideTooltip(event)
 	widgetState.tooltipSimpleSource = nil
 	if widgetState.dmHandle then
 		widgetState.dmHandle.tooltipVisible = false
+	end
+end
+
+local function hideDangerMarkTooltip(event)
+	if widgetState.selectedAllyTeamID ~= nil then
+		showScoreTooltip(event, widgetState.selectedAllyTeamID)
+	else
+		hideTooltip()
 	end
 end
 
@@ -1144,6 +1168,8 @@ local function initializeModel()
 		selectedDarkColor = makeColorString(DEFAULT_COLOR, DARK_COLOR_MULTIPLIER),
 		selectedActualWidth = "0%",
 		selectedColor = makeColorString(DEFAULT_COLOR),
+		showDangerMark = false,
+		dangerOverlayWidth = "100%",
 		hasDeadline = false,
 		isBelowDeadline = false,
 		deadlineLineBottom = tostring(VERTICAL_TRACK_BOTTOM_DP) .. "dp",
@@ -1152,7 +1178,7 @@ local function initializeModel()
 		verticalContentWidth = tostring(VERTICAL_CONTENT_MINIMUM_WIDTH_DP) .. "dp",
 		verticalBarsOverflow = false,
 		verticalBars = {},
-		footerScore = "0 pts",
+		footerScore = "0",
 		countdownWarning = false,
 		footerCountdown = "0:00",
 		footerTargetIcon = TROPHY_ICON,
@@ -1180,6 +1206,7 @@ local function initializeModel()
 		footerScoreTooltip = I18N("ui.territorialDomination.tooltip.currentScore"),
 		footerCountdownTooltip = I18N("ui.territorialDomination.tooltip.timeUntilFirstDeadline"),
 		footerTargetTooltip = I18N("ui.territorialDomination.tooltip.highestScore"),
+		dangerMarkTooltip = I18N("ui.territorialDomination.tooltip.eliminationDanger"),
 		popupVisible = false,
 		popupTitle = "",
 		popupRateText = "",
@@ -1195,6 +1222,8 @@ local function initializeModel()
 		showCurrentScoreTooltip = showCurrentScoreTooltip,
 		showCountdownTooltip = showCountdownTooltip,
 		showTargetTooltip = showTargetTooltip,
+		showDangerMarkTooltip = showDangerMarkTooltip,
+		hideDangerMarkTooltip = hideDangerMarkTooltip,
 	}
 end
 
@@ -1281,7 +1310,7 @@ local function showDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, a
 		end
 		widgetState.dmHandle.popupRateText =
 			I18N("ui.territorialDomination.deadlinePopup.territoryRate", { points = formatScore(currentDeadline * TERRITORY_POINTS_PER_DEADLINE) })
-		widgetState.dmHandle.popupDeadlineText = deadlineScore > 0
+		widgetState.dmHandle.popupDeadlineText = (deadlineScore > 0 and currentDeadline < maxDeadlines)
 				and I18N(
 					"ui.territorialDomination.deadlinePopup.eliminationBelow",
 					{ threshold = formatScore(deadlineScore) }
@@ -1369,7 +1398,9 @@ local function updateDataModel()
 	local selectedAllyTeam = chooseSelectedAllyTeam(allyTeams, allyTeamsByID, livingLeader)
 	local highestProjectedScore = getHighestProjectedScore(allyTeams)
 	local projectedLeader = findHighestProjectedAllyTeam(allyTeams, selectedAllyTeam, highestProjectedScore)
-	local hasDeadline = currentDeadline <= maxDeadlines and deadlineEndTimestamp > 0 and deadlineScore > 0
+	local hasDeadline = currentDeadline < maxDeadlines
+		and deadlineEndTimestamp > 0
+		and deadlineScore > 0
 	local verticalScale = math.max(1, highestProjectedScore, hasDeadline and deadlineScore or 0)
 	local selectedScore = selectedAllyTeam and selectedAllyTeam.score or 0
 	local selectedProjectedScore = selectedAllyTeam and selectedAllyTeam.projectedScore or 0
@@ -1381,6 +1412,8 @@ local function updateDataModel()
 	else
 		horizontalScale = math.max(1, highestProjectedScore)
 	end
+
+	local selectedProjectedPercent = clampNumber(selectedProjectedScore / horizontalScale * 100, 0, 100)
 
 	local distributionFillRml, distributionHits, ascendingAllyTeams = buildDistributionData(allyTeams)
 
@@ -1400,7 +1433,7 @@ local function updateDataModel()
 	widgetState.isInDanger = not widgetState.isInFirstPlace
 		and (
 			(hasDeadline and selectedProjectedScore < deadlineScore)
-			or (currentDeadline == maxDeadlines and selectedAllyTeam ~= nil)
+			or (currentDeadline >= maxDeadlines and selectedAllyTeam ~= nil)
 		)
 	updateHaloState()
 
@@ -1421,7 +1454,9 @@ local function updateDataModel()
 	dataModel.selectedDarkColor = selectedAllyTeam and selectedAllyTeam.darkColor
 		or makeColorString(DEFAULT_COLOR, DARK_COLOR_MULTIPLIER)
 	dataModel.selectedActualWidth = formatPercentage(selectedScore / horizontalScale * 100)
-	dataModel.selectedProjectedWidth = formatPercentage(selectedProjectedScore / horizontalScale * 100)
+	dataModel.selectedProjectedWidth = formatPercentage(selectedProjectedPercent)
+	dataModel.showDangerMark = widgetState.isInDanger and selectedAllyTeam ~= nil and selectedAllyTeam.isAlive
+	dataModel.dangerOverlayWidth = formatPercentage(100 - selectedProjectedPercent)
 	dataModel.hasDeadline = hasDeadline
 	dataModel.isBelowDeadline = isBelowDeadline
 	dataModel.deadlineLineBottom = string.format(
@@ -1430,8 +1465,9 @@ local function updateDataModel()
 	)
 	dataModel.deadlineLabel = DEADLINE_SKULL_ICON
 	dataModel.deadlineLabelBottom = tostring(DEADLINE_LABEL_OFFSET_DP) .. "dp"
-	dataModel.footerScore = formatScore(selectedScore) .. " pts"
+	dataModel.footerScore = formatScore(selectedScore)
 	dataModel.footerScoreTooltip = I18N("ui.territorialDomination.tooltip.currentScore")
+	dataModel.dangerMarkTooltip = I18N("ui.territorialDomination.tooltip.eliminationDanger")
 
 	local countdownText, remainingSeconds = formatCountdown(deadlineEndTimestamp, currentDeadline, maxDeadlines)
 	dataModel.footerCountdown = countdownText

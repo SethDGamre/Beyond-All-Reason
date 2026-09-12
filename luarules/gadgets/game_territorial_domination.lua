@@ -674,9 +674,13 @@ local function processDeadlineBoundary()
 		return
 	end
 
-	deadlineScore = floor(getHighestLivingScore() * DEADLINE_SCORE_MULTIPLIER)
 	currentDeadline = currentDeadline + 1
 	deadlineEndTimestamp = deadlineEndTimestamp + DEADLINE_SECONDS
+	if currentDeadline >= MAX_DEADLINES then
+		deadlineScore = 0
+	else
+		deadlineScore = floor(getHighestLivingScore() * DEADLINE_SCORE_MULTIPLIER)
+	end
 end
 
 local function publishDominationState()

@@ -28,6 +28,8 @@
 		>
 			<div class="td-panel-texture"></div>
 			<div class="td-panel-gradient"></div>
+			<div class="td-panel-shine"></div>
+			<div class="td-panel-gloss"></div>
 			<div
 				class="td-panel-halo"
 				data-class-origin="showOriginHalo"
@@ -66,6 +68,14 @@
 					data-style-background-color="selectedColor"
 				></div>
 				<div class="td-bar-gloss"></div>
+				<div
+					class="td-danger-overlay"
+					data-if="showDangerMark"
+					data-style-left="selectedProjectedWidth"
+					data-style-width="dangerOverlayWidth"
+					data-event-mouseover="showDangerMarkTooltip()"
+					data-event-mouseout="hideDangerMarkTooltip()"
+				></div>
 			</div>
 
 			<div class="td-expanded-chart" data-if="isExpanded">
@@ -95,12 +105,11 @@
 							class="td-vertical-slot"
 							data-class-eliminated="!score.isAlive"
 							data-style-left="score.slotLeft"
-							data-event-mousedown="blockPanelDrag()"
-							data-event-click="selectExpandedScore(score.allyTeamID)"
 						>
 							<div class="td-vertical-rank">{{score.rank}}</div>
 							<div
 								class="td-vertical-track"
+								data-class-local="score.isLocalPlayer"
 								data-event-mousedown="blockPanelDrag()"
 								data-event-click="selectExpandedScore(score.allyTeamID)"
 								data-event-mouseover="showScoreTooltip(score.allyTeamID)"
@@ -118,7 +127,11 @@
 								></div>
 								<div class="td-vertical-gloss"></div>
 							</div>
-							<div class="td-vertical-score">{{score.score}}</div>
+							<div
+								class="td-vertical-local-outline"
+								data-if="score.isLocalPlayer"
+								data-style-border-color="score.color"
+							></div>
 						</div>
 					</div>
 				</div>
@@ -129,7 +142,10 @@
 					class="td-footer-score"
 					data-event-mouseover="showCurrentScoreTooltip()"
 					data-event-mouseout="hideTooltip()"
-				>{{footerScore}}</div>
+				>
+					<span class="td-allyteam-color" data-style-background-color="selectedColor"></span>
+					<span>{{footerScore}}</span>
+				</div>
 				<div
 					class="td-footer-countdown"
 					data-class-warning="countdownWarning"
@@ -171,7 +187,7 @@
 				<div class="td-tooltip-row" data-if="tooltipShowDeadline">{{tooltipDeadlineDifference}}</div>
 				<div class="td-tooltip-row td-tooltip-leader-row" data-if="tooltipShowLeader">
 					<span>{{tooltipLeaderDifference}}</span>
-					<span class="td-tooltip-color" data-style-background-color="tooltipLeaderColor"></span>
+					<span class="td-allyteam-color" data-style-background-color="tooltipLeaderColor"></span>
 				</div>
 			</div>
 			<div class="td-tooltip-simple" data-if="tooltipIsSimple">{{tooltipText}}</div>

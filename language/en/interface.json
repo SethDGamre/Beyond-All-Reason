@@ -539,7 +539,7 @@
 				"defeat": "Defeat",
 				"deadline": "Deadline %{deadlineNumber}",
 				"finalDeadline": "Final Deadline",
-				"territoryRate": "Each territory now earns %{points} points per minute",
+				"territoryRate": "Each territory earns %{points} points per minute",
 				"eliminationBelow": "Elimination below %{threshold}!"
 			},
 			"deadline": {
@@ -565,7 +565,8 @@
 				"highestProjectedScoreYou": "You will have the highest score at the end of this deadline",
 				"timeUntilNextDeadline": "Time until next deadline",
 				"timeUntilFirstDeadline": "Time until first deadline is set.",
-				"timeUntilHighestScoreWins": "Time until the highest score wins."
+				"timeUntilHighestScoreWins": "Time until the highest score wins.",
+				"eliminationDanger": "You're in danger of being eliminated!"
 			}
 		},
 		"loadScreen": {
