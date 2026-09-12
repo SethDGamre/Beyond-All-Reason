@@ -60,6 +60,7 @@ local STATIC_UNIT_POWER_MULTIPLIER = 3
 local COMMANDER_POWER_MULTIPLIER = 1000
 local MIN_UNIT_POWER = 3
 local SECONDS_PER_MINUTE = 60
+local TERRITORY_POINTS_PER_DEADLINE = 10
 
 local MAX_PROGRESS = 1.0
 local STARTING_PROGRESS = 0
@@ -581,6 +582,10 @@ local function processNeighborsAndDecay()
 	end
 end
 
+local function getTerritoryPointRate()
+	return currentDeadline * TERRITORY_POINTS_PER_DEADLINE
+end
+
 local function updateTerritoryData(currentTimestamp)
 	for _, scoreData in pairs(allyData) do
 		scoreData.territoryCount = 0
@@ -600,7 +605,7 @@ local function updateTerritoryData(currentTimestamp)
 		if currentDeadline <= MAX_DEADLINES and deadlineEndTimestamp > currentTimestamp and allyTeamsWatch[allyID] then
 			local remainingSeconds = deadlineEndTimestamp - currentTimestamp
 			projectedScore = projectedScore
-				+ scoreData.territoryCount * currentDeadline * remainingSeconds / SECONDS_PER_MINUTE
+				+ scoreData.territoryCount * getTerritoryPointRate() * remainingSeconds / SECONDS_PER_MINUTE
 		end
 		scoreData.projectedScore = projectedScore
 	end
@@ -611,7 +616,7 @@ local function accrueTerritoryPoints(durationSeconds)
 		return
 	end
 
-	local pointsPerTerritory = currentDeadline * durationSeconds / SECONDS_PER_MINUTE
+	local pointsPerTerritory = getTerritoryPointRate() * durationSeconds / SECONDS_PER_MINUTE
 	for allyID in pairs(allyTeamsWatch) do
 		local scoreData = allyData[allyID]
 		scoreData.score = scoreData.score + scoreData.territoryCount * pointsPerTerritory

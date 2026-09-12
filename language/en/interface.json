@@ -551,6 +551,7 @@
 			},
 			"tooltip": {
 				"territories": "Territories: %{count}",
+				"gainRate": "Points Per Minute: %{points}",
 				"currentPoints": "Current points: %{points}",
 				"projectedPoints": "Projected points: %{points}",
 				"belowDeadline": "%{points} points below the Deadline",
@@ -560,6 +561,8 @@
 				"deadlineScore": "Gain this many points before time runs out to avoid elimination.",
 				"highestScore": "The Highest Score",
 				"highestScoreYou": "The Highest Score (It's you!)",
+				"highestProjectedScore": "This will be the highest score at the end of this deadline",
+				"highestProjectedScoreYou": "You will have the highest score at the end of this deadline",
 				"timeUntilNextDeadline": "Time until next deadline",
 				"timeUntilFirstDeadline": "Time until first deadline is set.",
 				"timeUntilHighestScoreWins": "Time until the highest score wins."

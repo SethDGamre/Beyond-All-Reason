@@ -40,15 +40,11 @@
 				data-if="!isExpanded"
 				data-event-mousedown="blockPanelDrag()"
 				data-event-click="toggleExpanded()"
+				data-event-mouseover="showDistributionTooltip()"
+				data-event-mousemove="showDistributionTooltip()"
 				data-event-mouseout="hideTooltip()"
 			>
-				<div
-					data-for="segment : distributionSegments"
-					class="td-distribution-segment"
-					data-style-width="segment.width"
-					data-style-background-color="segment.color"
-					data-event-mouseover="showTeamTooltip(segment.allyTeamID)"
-				></div>
+				<div id="td-distribution-fill" class="td-distribution-fill" data-rml="distributionFillRml"></div>
 				<div class="td-bar-gloss"></div>
 			</div>
 
@@ -88,12 +84,17 @@
 						<div class="td-deadline-line"></div>
 					</div>
 				</div>
-				<div class="td-vertical-scroll" data-class-overflowing="verticalBarsOverflow">
+				<div
+					id="td-vertical-scroll"
+					class="td-vertical-scroll"
+					data-class-overflowing="verticalBarsOverflow"
+				>
 					<div class="td-vertical-content" data-style-width="verticalContentWidth">
 						<div
 							data-for="score : verticalBars"
 							class="td-vertical-slot"
 							data-class-eliminated="!score.isAlive"
+							data-style-left="score.slotLeft"
 							data-event-mousedown="blockPanelDrag()"
 							data-event-click="selectExpandedScore(score.allyTeamID)"
 						>
@@ -137,11 +138,11 @@
 				>{{footerCountdown}}</div>
 				<div
 					class="td-footer-target"
-					data-class-deadline="hasDeadline"
+					data-class-deadline="isBelowDeadline"
 					data-event-mouseover="showTargetTooltip()"
 					data-event-mouseout="hideTooltip()"
 				>
-					<span class="td-footer-icon">{{footerTargetIcon}}</span>
+					<span class="td-footer-icon" data-style-color="footerTargetIconColor">{{footerTargetIcon}}</span>
 					<span>{{footerTargetValue}}</span>
 				</div>
 			</div>
@@ -154,6 +155,7 @@
 			data-style-top="tooltipTop"
 			data-style-width="tooltipWidth"
 		>
+			<div class="td-tooltip-title" data-if="tooltipTitle != ''">{{tooltipTitle}}</div>
 			<div class="td-tooltip-players" data-if="!tooltipIsSimple">
 				<div
 					data-for="player : tooltipPlayers"
@@ -162,12 +164,12 @@
 				>{{player.name}}</div>
 			</div>
 			<div class="td-tooltip-score" data-if="tooltipIsScore">
-				<div class="td-tooltip-row">{{tooltipPlace}}</div>
 				<div class="td-tooltip-row">{{tooltipTerritories}}</div>
+				<div class="td-tooltip-row">{{tooltipGainRate}}</div>
 				<div class="td-tooltip-row">{{tooltipCurrentScore}}</div>
 				<div class="td-tooltip-row">{{tooltipProjectedScore}}</div>
 				<div class="td-tooltip-row" data-if="tooltipShowDeadline">{{tooltipDeadlineDifference}}</div>
-				<div class="td-tooltip-row td-tooltip-leader-row">
+				<div class="td-tooltip-row td-tooltip-leader-row" data-if="tooltipShowLeader">
 					<span>{{tooltipLeaderDifference}}</span>
 					<span class="td-tooltip-color" data-style-background-color="tooltipLeaderColor"></span>
 				</div>
