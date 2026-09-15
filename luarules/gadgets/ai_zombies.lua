@@ -32,9 +32,8 @@ local DEGREES_TO_RADIANS = math.pi / 180
 
 local ZOMBIE_ORDER_CHECK_INTERVAL = Game.gameSpeed * 3
 local STUCK_CHECK_INTERVAL = Game.gameSpeed * 12
-local AGGRO_CHECK_INTERVAL = Game.gameSpeed * 30
-local AGGRO_DURATION = Game.gameSpeed * 60
-local AGGRO_MIN_START_FRAME = Game.gameSpeed * 60 * 15
+local AGGRO_GRACE_PERIOD = Game.gameSpeed * 60 * 20
+local AGGRO_MAX_COUNTDOWN = Game.gameSpeed * 60 * 10
 
 local STUCK_DISTANCE = 50
 local STUCK_DISTANCE_SQUARED = STUCK_DISTANCE ^ 2
@@ -51,7 +50,7 @@ local POSITION_VARIANCE = 50
 local ZOMBIE_MAX_ORDER_ATTEMPTS = 10
 local ZOMBIE_FACTORY_BUILD_COUNT = 20
 local MAX_NOGO_ZONES = 10
-local AGGRO_ZOMBIE_TO_PLAYER_POWER_RATIO = 0.1 -- the threshold of relative power where zombies stop wandering and swarm players 
+local AGGRO_REMAINING_POWER_RATIO = 0.25
 local COMBAT_ENGAGE_RANGE_RATIO = 0.5
 
 local NORMAL_OBJECTIVE_ANGLE_VARIANCE = 90 * DEGREES_TO_RADIANS
@@ -67,6 +66,7 @@ local CMD_IDLEMODE = CMD.IDLEMODE
 local CMD_MOVE = CMD.MOVE
 local CMD_FIGHT = CMD.FIGHT
 local CMD_CAPTURE = CMD.CAPTURE
+local CMD_RESURRECT = CMD.RESURRECT
 local CMD_STOP = CMD.STOP
 local CMD_OPT_SHIFT = { "shift" }
 
@@ -83,6 +83,7 @@ local MAP_SIZE_Z = Game.mapSizeZ
 local MAP_PERIMETER = 2 * (MAP_SIZE_X + MAP_SIZE_Z)
 local OBJECTIVE_TYPE_NORMAL = 1
 local OBJECTIVE_TYPE_AGGRO = 2
+local FEATURE_ID_OFFSET = Engine.FeatureSupport.noOffsetForFeatureID and 0 or Game.maxUnits
 
 local spGetUnitNearestEnemy = spring.GetUnitNearestEnemy
 local spValidUnitID = spring.ValidUnitID
@@ -102,6 +103,10 @@ local spGetUnitTeam = spring.GetUnitTeam
 local spGetUnitLosState = spring.GetUnitLosState
 local spGetUnitsInCylinder = spring.GetUnitsInCylinder
 local spAreTeamsAllied = spring.AreTeamsAllied
+local spGetUnitWorkerTask = spring.GetUnitWorkerTask
+local spGetUnitEffectiveBuildRange = spring.GetUnitEffectiveBuildRange
+local spGetFeaturesInCylinder = spring.GetFeaturesInCylinder
+local spGetFeatureResurrect = spring.GetFeatureResurrect
 
 local gaiaTeamID = spring.GetGaiaTeamID()
 local gaiaAllyTeamID = select(6, spring.GetTeamInfo(gaiaTeamID))
@@ -120,13 +125,15 @@ local isPacified = false
 local autoOrdersSuspended = false
 local gameFrame = 0
 local totalMobileZombiePower = 0
-local aggroExpirationTimestamp = 0
+local nextAggroTimestamp
+local aggroPowerThreshold
 
 local mobileUnitDefs = {}
 local aircraftUnitDefs = {}
 local factoriesWithCombatOptions = {}
 local unitDefWeaponRanges = {}
 local capturingUnits = {}
+local resurrectingUnitDefs = {}
 local zombieAggros = {}
 local allyTeamUnits = {}
 local unitAllyTeamIDs = {}
@@ -139,6 +146,9 @@ local zombieStuckBuckets = {}
 for unitDefID, unitDef in pairs(UnitDefs) do
 	if unitDef.canCapture then
 		capturingUnits[unitDefID] = true
+	end
+	if unitDef.canResurrect then
+		resurrectingUnitDefs[unitDefID] = true
 	end
 
 	if unitDef.weapons and #unitDef.weapons > 0 then
@@ -242,12 +252,17 @@ local function unwatchZombie(unitID)
 	zombieAggros[unitID] = nil
 end
 
-local function setAggroExpiration()
-	aggroExpirationTimestamp = gameFrame + AGGRO_DURATION
+local function restartAggroCountdown()
+	nextAggroTimestamp = gameFrame + random(0, AGGRO_MAX_COUNTDOWN)
+end
+
+local function refreshAggroPowerThreshold()
+	aggroPowerThreshold = totalMobileZombiePower * AGGRO_REMAINING_POWER_RATIO
+	restartAggroCountdown()
 end
 
 local function getActiveZombieAggro(unitID)
-	if gameFrame >= aggroExpirationTimestamp then
+	if not aggroPowerThreshold then
 		return nil
 	end
 	return zombieAggros[unitID]
@@ -288,6 +303,30 @@ end
 
 local function isZombie(unitID)
 	return spGetUnitRulesParam(unitID, "zombie") == 1
+end
+
+local function isUnitResurrecting(unitID, currentCommand)
+	if currentCommand == CMD_RESURRECT then
+		return true
+	end
+	local workerCommand = spGetUnitWorkerTask(unitID)
+	return workerCommand == CMD_RESURRECT
+end
+
+local function getNearbyResurrectableCorpse(unitID)
+	local unitX, _, unitZ = spGetUnitPosition(unitID)
+	if not unitX then
+		return
+	end
+	local buildRange = spGetUnitEffectiveBuildRange(unitID)
+	local nearbyFeatures = spGetFeaturesInCylinder(unitX, unitZ, buildRange)
+	for featureIndex = 1, #nearbyFeatures do
+		local featureID = nearbyFeatures[featureIndex]
+		local resurrectUnitName = spGetFeatureResurrect(featureID)
+		if resurrectUnitName and resurrectUnitName ~= "" then
+			return featureID
+		end
+	end
 end
 
 local function issueRandomFactoryBuildOrders(unitID, unitDefID, buildCount)
@@ -823,6 +862,24 @@ local function updateOrders(unitID, unitDefID)
 	if mobileUnitDefs[unitDefID] then
 		local previousCombatTargetID = zombieData.combatTargetID
 		local currentCommand = spGetUnitCurrentCommand(unitID)
+		if resurrectingUnitDefs[unitDefID] then
+			if isUnitResurrecting(unitID, currentCommand) then
+				return
+			end
+			local corpseFeatureID = getNearbyResurrectableCorpse(unitID)
+			if corpseFeatureID then
+				zombieData.combatTargetID = nil
+				zombieData.lastCombatTargetX = nil
+				zombieData.lastCombatTargetZ = nil
+				spGiveOrderToUnit(
+					unitID,
+					CMD_RESURRECT,
+					{ corpseFeatureID + FEATURE_ID_OFFSET },
+					0
+				)
+				return
+			end
+		end
 		local movementCommand = getMovementCommand(unitDefID)
 		if
 			currentCommand == CMD_CAPTURE -- capture needs LOS, so drop the order if Gaia loses sight
@@ -1027,7 +1084,7 @@ local function aggroAllZombiesToAllyTeam(allyTeamID)
 	end
 
 	if markedAny then
-		setAggroExpiration()
+		refreshAggroPowerThreshold()
 	end
 	return markedAny
 end
@@ -1060,17 +1117,23 @@ local function killAllZombies()
 end
 
 local function updateAggro()
-	if gameFrame % AGGRO_CHECK_INTERVAL ~= 1 or gameFrame < AGGRO_MIN_START_FRAME then
+	if aggroPowerThreshold and totalMobileZombiePower <= aggroPowerThreshold then
+		zombieAggros = {}
+		aggroPowerThreshold = nil
+		restartAggroCountdown()
 		return
 	end
-	local totalPlayerPower = GG.PowerLib.TotalPlayerTeamsPower()
-	local powerCheckSucceeded = totalMobileZombiePower > totalPlayerPower * AGGRO_ZOMBIE_TO_PLAYER_POWER_RATIO
-	if powerCheckSucceeded then
+
+	if not nextAggroTimestamp then
+		if gameFrame < AGGRO_GRACE_PERIOD then
+			return
+		end
+		restartAggroCountdown()
+	end
+
+	if gameFrame >= nextAggroTimestamp then
 		assignZombieAggroEvenly()
-		setAggroExpiration()
-	else
-		zombieAggros = {}
-		aggroExpirationTimestamp = 0
+		refreshAggroPowerThreshold()
 	end
 end
 
@@ -1113,6 +1176,7 @@ local function updateStuckZombies()
 				if
 					mobileUnitDefs[unitDefID] -- if they haven't moved, blacklist this spot and reroute; keep a remembered-enemy goal
 					and not isAtRememberedObjective
+					and not isUnitResurrecting(unitID, spGetUnitCurrentCommand(unitID))
 					and movedDistanceSquared < STUCK_DISTANCE_SQUARED
 				then
 					clearUnitOrders(unitID)

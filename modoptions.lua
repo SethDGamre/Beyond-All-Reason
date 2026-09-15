@@ -1790,12 +1790,12 @@ local options = {
 			{
 				key = "nightmare",
 				name = "Nightmare",
-				desc = "Faster revival rate, stronger Zombies, 2-5 spawn per corpse.",
+				desc = "Faster revival rate, stronger Zombies, 2-8 spawn per corpse.",
 			},
 			{
 				key = "akumu",
 				name = "Akumu",
-				desc = "Faster revival rate, stronger Zombies, 2-8 spawn per corpse, zombies leave corpses.",
+				desc = "Faster revival rate, stronger Zombies, 4-10 spawn per corpse, zombies leave corpses.",
 			},
 		},
 	},

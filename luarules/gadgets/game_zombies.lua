@@ -88,15 +88,15 @@ local zombieModeConfigs = {
 		rezMin = 60,
 		rezMax = 120,
 		countMin = 2,
-		countMax = 6,
+		countMax = 8,
 		zombieCorpses = false,
 	},
 	akumu = {
 		techToRezPowerSpeeds = harderTechToRezPowerSpeeds,
 		rezMin = 60,
 		rezMax = 120,
-		countMin = 2,
-		countMax = 8,
+		countMin = 4,
+		countMax = 10,
 		zombieCorpses = true,
 	},
 }
@@ -124,6 +124,8 @@ local random = math.random
 local floor = math.floor
 local clamp = math.clamp
 local ceil = math.ceil
+local min = math.min
+local max = math.max
 
 local teams = spring.GetTeamList()
 local scavTeamID
@@ -399,17 +401,13 @@ local function calculateSpawnCount(unitDefID)
 	local rezMin = currentZombieConfig.rezMin
 	local rezMax = currentZombieConfig.rezMax
 
-	if currentTechLevel <= 1 then
-		return math.min(rollSpawnCount(), rollSpawnCount(), rollSpawnCount()) -- extra min() rolls skew the count down except for cheap, fast-rez units
-	end
-
 	if rezTimeSeconds == rezMin then
-		return rollSpawnCount()
+		return max(rollSpawnCount(), rollSpawnCount())
 	end
 	if rezTimeSeconds == rezMax then
-		return math.min(rollSpawnCount(), rollSpawnCount(), rollSpawnCount())
+		return min(rollSpawnCount(), rollSpawnCount(), rollSpawnCount())
 	end
-	return math.min(rollSpawnCount(), rollSpawnCount())
+	return rollSpawnCount()
 end
 
 local function spawnZombies(featureID, unitDefID, healthReductionRatio, x, y, z, wasZombie, pastXp)

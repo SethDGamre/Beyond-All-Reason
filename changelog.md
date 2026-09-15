@@ -1,6 +1,7 @@
 # September
 - [Scavenger Zombies]
-  - After 15 minutes into the game, zombies will swarm all teams evenly once they reach 10% of the value of all players combined.
+  - After a 20-minute grace period, zombies begin random 0-10 minute aggro countdowns and swarm until players destroy 75% of their snapshotted power.
+  - Zombie constructors prioritize nearby corpses and keep their current resurrection target while working.
   - Zombies spawn with XP skewed to the minimum veterancy so they aren't so tanky so often.
   - When zombie revive timer has been reset, a purple poof now appears above it.
   - Units that don't leave corpses like the Fiend will no longer respawn as zombies.
