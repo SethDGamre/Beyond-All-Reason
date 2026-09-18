@@ -124,7 +124,7 @@ local aggroExpirationTimestamp = 0
 
 local mobileUnitDefs = {}
 local aircraftUnitDefs = {}
-local factoriesWithCombatOptions = {}
+local factoriesWithWantedOptions = {}
 local unitDefWeaponRanges = {}
 local capturingUnits = {}
 local zombieAggros = {}
@@ -197,15 +197,18 @@ for unitDefID, unitDef in pairs(UnitDefs) do
 			aircraftUnitDefs[unitDefID] = true
 		end
 	elseif #unitDef.buildOptions > 0 then
-		local combatOptions = {}
+		local wantedOptions = {}
 		for optionIndex = 1, #unitDef.buildOptions do
 			local optionDefID = unitDef.buildOptions[optionIndex]
-			if unitDefWeaponRanges[optionDefID] then
-				combatOptions[#combatOptions + 1] = optionDefID
+			local optionDef = UnitDefs[optionDefID]
+			local isConstructor = optionDef and optionDef.isBuilder and optionDef.speed > 0
+			local isResurrector = optionDef and optionDef.canResurrect
+			if unitDefWeaponRanges[optionDefID] or isConstructor or isResurrector then
+				wantedOptions[#wantedOptions + 1] = optionDefID
 			end
 		end
-		if #combatOptions > 0 then
-			factoriesWithCombatOptions[unitDefID] = combatOptions
+		if #wantedOptions > 0 then
+			factoriesWithWantedOptions[unitDefID] = wantedOptions
 		end
 	end
 end
@@ -291,10 +294,10 @@ local function isZombie(unitID)
 end
 
 local function issueRandomFactoryBuildOrders(unitID, unitDefID, buildCount)
-	local combatOptions = factoriesWithCombatOptions[unitDefID]
+	local wantedOptions = factoriesWithWantedOptions[unitDefID]
 	local buildOrders = {}
 	for buildIndex = 1, buildCount do
-		buildOrders[#buildOrders + 1] = { -combatOptions[random(1, #combatOptions)], 0, 0 }
+		buildOrders[#buildOrders + 1] = { -wantedOptions[random(1, #wantedOptions)], 0, 0 }
 	end
 	spGiveOrderArrayToUnit(unitID, buildOrders)
 end
@@ -889,7 +892,7 @@ local function updateOrders(unitID, unitDefID)
 		end
 	end
 
-	if factoriesWithCombatOptions[unitDefID] then
+	if factoriesWithWantedOptions[unitDefID] then
 		local factoryCommandCount = spGetFactoryCommandCount(unitID) or 0
 		if factoryCommandCount < ZOMBIE_FACTORY_BUILD_COUNT then
 			issueRandomFactoryBuildOrders(
@@ -902,7 +905,7 @@ local function updateOrders(unitID, unitDefID)
 end
 
 local function setZombieStates(unitID, unitDefID)
-	if factoriesWithCombatOptions[unitDefID] then
+	if factoriesWithWantedOptions[unitDefID] then
 		spGiveOrderToUnit(unitID, CMD_REPEAT, ENABLE_REPEAT, 0)
 	end
 	spGiveOrderToUnit(unitID, CMD_MOVE_STATE, MOVE_STATE_ROAM, 0)
