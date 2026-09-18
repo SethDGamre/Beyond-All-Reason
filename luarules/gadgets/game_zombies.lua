@@ -379,16 +379,16 @@ local function calculateSpawnCount(unitDefID)
 	local rezMax = currentZombieConfig.rezMax
 
 	if currentTechLevel <= 1 then
-		return math.min(rollSpawnCount(), rollSpawnCount(), rollSpawnCount()) -- extra min() rolls skew the count down except for cheap, fast-rez units
+		return math.min(rollSpawnCount(), rollSpawnCount(), rollSpawnCount())
 	end
 
 	if rezTimeSeconds == rezMin then
-		return rollSpawnCount()
+		return math.max(rollSpawnCount(), rollSpawnCount())
 	end
 	if rezTimeSeconds == rezMax then
 		return math.min(rollSpawnCount(), rollSpawnCount(), rollSpawnCount())
 	end
-	return math.min(rollSpawnCount(), rollSpawnCount())
+	return rollSpawnCount()
 end
 
 local function spawnZombies(featureID, unitDefID, healthReductionRatio, x, y, z, wasZombie, pastXp)
