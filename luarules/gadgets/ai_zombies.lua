@@ -1170,7 +1170,7 @@ end
 
 function gadget:GameFrame(frame)
 	gameFrame = frame
-	if not isPacified and hasGameEndExplosionStarted() then
+	if not isPacified and not BAR.Utilities.Gametype.IsScavengers() and not BAR.Utilities.Gametype.IsRaptors() and hasGameEndExplosionStarted() then
 		pacifyZombies(true)
 	end
 	updateAggro()
