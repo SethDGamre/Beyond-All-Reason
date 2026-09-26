@@ -70,7 +70,7 @@ local harderTechToRezPowerSpeeds = {
 local zombieModeConfigs = {
 	normal = {
 		techToRezPowerSpeeds = standardTechToRezPowerSpeeds,
-		rezMin = 90,
+		rezMin = 60,
 		rezMax = 180,
 		countMin = 1,
 		countMax = 1,
@@ -78,7 +78,7 @@ local zombieModeConfigs = {
 	},
 	hard = {
 		techToRezPowerSpeeds = harderTechToRezPowerSpeeds,
-		rezMin = 60,
+		rezMin = 45,
 		rezMax = 180,
 		countMin = 1,
 		countMax = 1,
@@ -86,7 +86,7 @@ local zombieModeConfigs = {
 	},
 	nightmare = {
 		techToRezPowerSpeeds = harderTechToRezPowerSpeeds,
-		rezMin = 60,
+		rezMin = 45,
 		rezMax = 120,
 		countMin = 2,
 		countMax = 6,
@@ -94,7 +94,7 @@ local zombieModeConfigs = {
 	},
 	akumu = {
 		techToRezPowerSpeeds = harderTechToRezPowerSpeeds,
-		rezMin = 60,
+		rezMin = 45,
 		rezMax = 120,
 		countMin = 2,
 		countMax = 8,
