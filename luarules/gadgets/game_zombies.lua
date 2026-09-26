@@ -1,3 +1,4 @@
+-- [Scavenger Zombies] Zombie factories build at their original buildpower * 1.7 ^ the current tech estimate.
 function gadget:GetInfo()
 	return {
 		name = "Zombies",
@@ -37,6 +38,7 @@ local PUBLIC_RULES_PARAM_ACCESS = { public = true }
 local WAS_ZOMBIE_TIMEOUT_FRAMES = Game.gameSpeed * 3
 local MIN_ZOMBIE_XP = 0.25
 local ZOMBIE_MAX_XP = 1.5
+local FACTORY_BUILDPOWER_TECH_BASE = 1.7
 
 local standardTechToRezPowerSpeeds = {
 	[0.5] = 1,
@@ -148,6 +150,7 @@ local pendingUnitXp = {}
 local pendingZombieCaptures = {}
 local heapingZombies = {}
 local zombieHeapDefs = {}
+local zombieFactories = {}
 local unitDefs = UnitDefs
 local unitDefNames = UnitDefNames
 local featureDefNames = FeatureDefNames
@@ -245,6 +248,42 @@ local function rebuildZombieCorpseSpawnDelays()
 	end
 end
 
+local function calculateFactoryBuildpower(baseBuildpower, techLevel)
+	return baseBuildpower * FACTORY_BUILDPOWER_TECH_BASE ^ techLevel
+end
+
+local function applyZombieFactoryBuildpower(unitID, unitDefID)
+	local unitDef = unitDefs[unitDefID]
+	if not unitDef or not unitDef.isFactory then
+		return
+	end
+
+	local techLevel = currentTechLevel or 1
+	local buildpower = calculateFactoryBuildpower(unitDef.buildSpeed, techLevel)
+	spring.SetUnitBuildSpeed(unitID, buildpower)
+	zombieFactories[unitID] = unitDefID
+end
+
+local function revertZombieFactoryBuildpower(unitID, unitDefID)
+	local unitDef = unitDefs[unitDefID]
+	if unitDef then
+		spring.SetUnitBuildSpeed(unitID, unitDef.buildSpeed)
+	end
+	zombieFactories[unitID] = nil
+end
+
+local function refreshZombieFactoryBuildpower()
+	for unitID, unitDefID in pairs(zombieFactories) do
+		if not spValidUnitID(unitID) then
+			zombieFactories[unitID] = nil
+		elseif spring.GetUnitTeam(unitID) ~= gaiaTeamID then
+			revertZombieFactoryBuildpower(unitID, unitDefID)
+		else
+			applyZombieFactoryBuildpower(unitID, unitDefID)
+		end
+	end
+end
+
 local function updateAdjustedRezPowerSpeed()
 	local techLevel = 1
 	adjustedRezPowerSpeed = getRezPowerSpeedForTechLevel(currentZombieConfig, techLevel)
@@ -260,6 +299,7 @@ end
 local function updateRezSpeed()
 	updateAdjustedRezPowerSpeed()
 	rebuildZombieCorpseSpawnDelays()
+	refreshZombieFactoryBuildpower()
 end
 
 ---Applies a preset's tuning to the live zombie config, falling back to `normal`
@@ -446,6 +486,7 @@ local function spawnZombies(featureID, unitDefID, healthReductionRatio, x, y, z,
 			local unitHealth = spGetUnitHealth(unitID)
 			spring.SetUnitHealth(unitID, unitHealth * healthReductionRatio)
 			spring.SetUnitRulesParam(unitID, "zombie", 1)
+			applyZombieFactoryBuildpower(unitID, unitDefToCreate)
 			if scavTeamID then
 				spring.TransferUnit(unitID, scavTeamID)
 			else
@@ -486,6 +527,7 @@ local function setZombie(unitID)
 	end
 
 	spring.SetUnitRulesParam(unitID, "zombie", 1)
+	applyZombieFactoryBuildpower(unitID, unitDefID)
 	initializeZombieAI(unitID, unitDefID)
 end
 
@@ -677,6 +719,7 @@ function gadget:UnitDestroyed(unitID, unitDefID, unitTeam)
 	heapingZombies[unitID] = nil
 	pendingZombieCaptures[unitID] = nil
 	zombiesBeingBuilt[unitID] = nil
+	zombieFactories[unitID] = nil
 end
 
 function gadget:AllowUnitCaptureStep(builderID, builderTeam, unitID, unitDefID, part)
@@ -687,6 +730,9 @@ function gadget:AllowUnitCaptureStep(builderID, builderTeam, unitID, unitDefID, 
 end
 
 function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
+	if newTeam ~= gaiaTeamID and zombieFactories[unitID] then
+		revertZombieFactoryBuildpower(unitID, unitDefID)
+	end
 	if pendingZombieCaptures[unitID] then
 		pendingZombieCaptures[unitID] = nil
 		if not isZombie(unitID) then
