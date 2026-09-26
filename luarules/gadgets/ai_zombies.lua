@@ -93,6 +93,7 @@ local spGiveOrderToUnit = spring.GiveOrderToUnit
 local spGiveOrderArrayToUnit = spring.GiveOrderArrayToUnit
 local spGetFactoryCommandCount = spring.GetFactoryCommandCount
 local spGetUnitIsDead = spring.GetUnitIsDead
+local spGetUnitIsBeingBuilt = spring.GetUnitIsBeingBuilt
 local spGetUnitHealth = spring.GetUnitHealth
 local spGetUnitRulesParam = spring.GetUnitRulesParam
 local spTestMoveOrder = spring.TestMoveOrder
@@ -350,6 +351,7 @@ local function getCombatTargetData(unitDefID, targetID)
 	local shouldCapture = capturingUnits[unitDefID]
 		and UnitDefs[targetDefID].capturable ~= false
 		and isUnitInGaiaLos(targetID)
+		and not spGetUnitIsBeingBuilt(targetID)
 	local weaponRange = getWeaponRangeForTarget(unitDefID, targetID, targetY)
 	if shouldCapture or (weaponRange and weaponRange > 0) then
 		return targetX, targetZ, shouldCapture, weaponRange

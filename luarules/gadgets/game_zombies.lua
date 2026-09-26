@@ -1,3 +1,4 @@
+-- [Scavenger Zombies] Zombies do not capture units that are still being built.
 -- [Scavenger Zombies] After 60 minutes, zombies stay permanently aggro'd and respawn at a fixed speed of 20 instead of scaling with the tech estimate.
 -- [Scavenger Zombies] Zombie factories build at their original buildpower * 1.7 ^ the current tech estimate.
 -- [Scavenger Zombies] Nightmare and Akumu spawn counts are rolled between the mode's min and max. At tech 1 or below, the count is the lowest of 3 rolls. Above tech 1, units that revive at the fastest allowed time take the highest of 2 rolls, units that revive at the slowest allowed time take the lowest of 3 rolls, and units in between roll once. Normal and Hard always spawn 1. Corpses that were already zombies, and units that cannot move, always spawn 1.
