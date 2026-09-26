@@ -1,4 +1,6 @@
+-- [Scavenger Zombies] After 60 minutes, zombies stay permanently aggro'd and respawn at a fixed speed of 20 instead of scaling with the tech estimate.
 -- [Scavenger Zombies] Zombie factories build at their original buildpower * 1.7 ^ the current tech estimate.
+-- [Scavenger Zombies] Nightmare and Akumu spawn counts are rolled between the mode's min and max. At tech 1 or below, the count is the lowest of 3 rolls. Above tech 1, units that revive at the fastest allowed time take the highest of 2 rolls, units that revive at the slowest allowed time take the lowest of 3 rolls, and units in between roll once. Normal and Hard always spawn 1. Corpses that were already zombies, and units that cannot move, always spawn 1.
 function gadget:GetInfo()
 	return {
 		name = "Zombies",
@@ -108,6 +110,8 @@ local currentZombieConfig = zombieModeConfigs.normal
 
 local ZOMBIE_CHECK_INTERVAL = Game.gameSpeed -- How often (in frames) everything else is checked
 local REZ_SPEED_UPDATE_INTERVAL = Game.gameSpeed * 60
+local TOO_LONG_GAME_FRAMES = Game.gameSpeed * 60 * 60
+local TOO_LONG_REZ_POWER_SPEED = 20
 local WATER_DAMAGE_DEF_ID = Game.envDamageTypes.Water
 local CORPSE_RESET_CEG = "selfrepair-sparks-purple"
 local CORPSE_RESET_CEG_HEIGHT = 15
@@ -137,6 +141,7 @@ for _, teamID in ipairs(teams) do
 end
 
 local gameFrame = 0
+local tooLong = false
 local adjustedRezPowerSpeed = currentZombieConfig.techToRezPowerSpeeds[1]
 local currentTechLevel = nil
 local autoSpawningEnabled = true
@@ -286,11 +291,17 @@ end
 
 local function updateAdjustedRezPowerSpeed()
 	local techLevel = 1
-	adjustedRezPowerSpeed = getRezPowerSpeedForTechLevel(currentZombieConfig, techLevel)
+	if tooLong then
+		adjustedRezPowerSpeed = TOO_LONG_REZ_POWER_SPEED
+	else
+		adjustedRezPowerSpeed = getRezPowerSpeedForTechLevel(currentZombieConfig, techLevel)
+	end
 	if GG.PowerLib and GG.PowerLib.HighestPlayerTeamPower and GG.PowerLib.TechGuesstimate then
 		local highestPowerData = GG.PowerLib.HighestPlayerTeamPower()
 		techLevel = GG.PowerLib.TechGuesstimate(highestPowerData.power)
-		adjustedRezPowerSpeed = getRezPowerSpeedForTechLevel(currentZombieConfig, techLevel)
+		if not tooLong then
+			adjustedRezPowerSpeed = getRezPowerSpeedForTechLevel(currentZombieConfig, techLevel)
+		end
 	end
 
 	currentTechLevel = techLevel
@@ -300,6 +311,18 @@ local function updateRezSpeed()
 	updateAdjustedRezPowerSpeed()
 	rebuildZombieCorpseSpawnDelays()
 	refreshZombieFactoryBuildpower()
+end
+
+local function updateTooLong(frame)
+	if tooLong or frame < TOO_LONG_GAME_FRAMES then
+		return
+	end
+	tooLong = true
+	GG.Zombies.tooLong = true
+	updateRezSpeed()
+	if GG.ZombieAI and GG.ZombieAI.EnablePermanentAggro then
+		GG.ZombieAI.EnablePermanentAggro()
+	end
 end
 
 ---Applies a preset's tuning to the live zombie config, falling back to `normal`
@@ -588,6 +611,7 @@ function gadget:GameFrame(frame)
 	end
 
 	if frame % ZOMBIE_CHECK_INTERVAL == 0 then
+		updateTooLong(frame)
 		spring.AddTeamResource(gaiaTeamID, "metal", 1000000)
 		spring.AddTeamResource(gaiaTeamID, "energy", 1000000)
 		for unitID, timeoutFrame in pairs(wereZombies) do
@@ -1181,12 +1205,15 @@ local function commandSetZombieMode(_, line, words, playerID)
 end
 
 function gadget:Initialize()
+	gameFrame = spring.GetGameFrame()
+	if gameFrame >= TOO_LONG_GAME_FRAMES then
+		tooLong = true
+	end
+
 	local initialMode = modOptions.zombies or "normal"
 	applyZombieModeSettings(initialMode)
 
 	autoSpawningEnabled = modOptionEnabled and not isIdleMode
-
-	gameFrame = spring.GetGameFrame()
 
 	local units = spring.GetAllUnits()
 	for _, unitID in ipairs(units) do
@@ -1202,7 +1229,7 @@ function gadget:Initialize()
 		end
 	end
 
-	GG.Zombies = { IdleMode = isIdleMode }
+	GG.Zombies = { IdleMode = isIdleMode, tooLong = tooLong }
 	GG.Zombies.SetZombie = setZombie
 	GG.Zombies.ConvertUnitsToZombies = convertUnitsToZombies
 	GG.Zombies.SetAllGaiaToZombies = setAllGaiaToZombies

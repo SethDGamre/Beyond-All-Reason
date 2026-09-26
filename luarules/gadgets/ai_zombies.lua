@@ -121,6 +121,7 @@ local autoOrdersSuspended = false
 local gameFrame = 0
 local totalMobileZombiePower = 0
 local aggroExpirationTimestamp = 0
+local permanentlyAggro = false
 
 local mobileUnitDefs = {}
 local aircraftUnitDefs = {}
@@ -250,7 +251,7 @@ local function setAggroExpiration()
 end
 
 local function getActiveZombieAggro(unitID)
-	if gameFrame >= aggroExpirationTimestamp then
+	if not permanentlyAggro and gameFrame >= aggroExpirationTimestamp then
 		return nil
 	end
 	return zombieAggros[unitID]
@@ -1062,8 +1063,20 @@ local function killAllZombies()
 	end
 end
 
+local function enablePermanentAggro()
+	permanentlyAggro = true
+	assignZombieAggroEvenly()
+end
+
 local function updateAggro()
-	if gameFrame % AGGRO_CHECK_INTERVAL ~= 1 or gameFrame < AGGRO_MIN_START_FRAME then
+	if gameFrame % AGGRO_CHECK_INTERVAL ~= 1 then
+		return
+	end
+	if permanentlyAggro then
+		assignZombieAggroEvenly()
+		return
+	end
+	if gameFrame < AGGRO_MIN_START_FRAME then
 		return
 	end
 	local totalPlayerPower = GG.PowerLib.TotalPlayerTeamsPower()
@@ -1156,12 +1169,17 @@ function gadget:Initialize()
 		end
 	end
 
+	if GG.Zombies and GG.Zombies.tooLong then
+		enablePermanentAggro()
+	end
+
 	GG.ZombieAI = {
 		InitializeZombie = initializeZombie,
 		PacifyZombies = pacifyZombies,
 		SuspendAutoOrders = suspendAutoOrders,
 		AggroTeamID = aggroTeamID,
 		AggroAllyID = aggroAllyID,
+		EnablePermanentAggro = enablePermanentAggro,
 		KillAllZombies = killAllZombies,
 		ClearAllOrders = clearAllOrders,
 	}
