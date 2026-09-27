@@ -3662,6 +3662,10 @@
 				}
 			}
 		},
+		"spidergeddon": {
+			"name": "Spidergeddon",
+			"desc": "Holiday event. Zombies that respawn from corpses take the form of spider-like units."
+		},
 		"options_experimental": {
 			"name": "Experimental",
 			"desc": "Experimental options"

@@ -1784,20 +1784,41 @@ local options = {
 		section = "options_extra",
 		hidden = false,
 		items = {
-			{ key = "disabled", name = "Disabled", desc = "Disabled" },
-			{ key = "normal", name = "Normal", desc = "Normal revival rate, normal strength." },
-			{ key = "hard", name = "Hard", desc = "Faster revival rate, stronger Zombies." },
+			{ key = "disabled", name = "Disabled", desc = "Disabled", lock = { "spidergeddon" } },
+			{
+				key = "normal",
+				name = "Normal",
+				desc = "Normal revival rate, normal strength.",
+				unlock = { "spidergeddon" },
+			},
+			{
+				key = "hard",
+				name = "Hard",
+				desc = "Faster revival rate, stronger Zombies.",
+				unlock = { "spidergeddon" },
+			},
 			{
 				key = "nightmare",
 				name = "Nightmare",
 				desc = "Faster revival rate, stronger Zombies, 2-5 spawn per corpse.",
+				unlock = { "spidergeddon" },
 			},
 			{
 				key = "akumu",
 				name = "Akumu",
 				desc = "Faster revival rate, stronger Zombies, 2-8 spawn per corpse, zombies leave corpses.",
+				unlock = { "spidergeddon" },
 			},
 		},
+	},
+
+	{
+		key = "spidergeddon",
+		name = "Spidergeddon",
+		desc = "Holiday event. Zombies that respawn from corpses take the form of spider-like units.",
+		type = "bool",
+		def = true,
+		section = "options_extra",
 	},
 
 	---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
