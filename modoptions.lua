@@ -1811,7 +1811,7 @@ local options = {
 			{
 				key = "akumu",
 				name = "Akumu",
-				desc = "Faster revival rate, stronger Zombies, 2-8 spawn per corpse, zombies leave corpses.",
+				desc = "Faster revival rate, stronger Zombies, 2-8 spawn per corpse.",
 				unlock = { "spidergeddon" },
 			},
 		},
