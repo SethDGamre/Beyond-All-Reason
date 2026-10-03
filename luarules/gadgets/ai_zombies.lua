@@ -43,6 +43,7 @@ local NOGO_ZONE_RADIUS_SQUARED = NOGO_ZONE_RADIUS ^ 2
 local ENEMY_ATTACK_DISTANCE = 1000
 local GHOST_ENEMY_RADIUS = 300
 local GHOST_ENEMY_RADIUS_SQUARED = GHOST_ENEMY_RADIUS * GHOST_ENEMY_RADIUS
+local GHOST_MOVE_ORDER_INTERVAL = Game.gameSpeed * 6
 local GHOST_MOVE_DISTANCE = 1000
 local GHOST_ENEMY_SEARCH_RADIUS = 99999
 local GHOST_MAP_MARGIN = 16
@@ -72,6 +73,7 @@ local CMD_IDLEMODE = CMD.IDLEMODE
 local CMD_MOVE = CMD.MOVE
 local CMD_FIGHT = CMD.FIGHT
 local CMD_CAPTURE = CMD.CAPTURE
+local CMD_RECLAIM = CMD.RECLAIM
 local CMD_RESURRECT = CMD.RESURRECT
 local CMD_STOP = CMD.STOP
 local CMD_OPT_SHIFT = { "shift" }
@@ -143,6 +145,7 @@ local aircraftUnitDefs = {}
 local factoriesWithWantedOptions = {}
 local unitDefWeaponRanges = {}
 local capturingUnits = {}
+local objectifyUnitDefs = {}
 local resurrectingUnits = {}
 local zombieAggros = {}
 local allyTeamUnits = {}
@@ -156,6 +159,9 @@ local zombieStuckBuckets = {}
 for unitDefID, unitDef in pairs(UnitDefs) do
 	if unitDef.canCapture then
 		capturingUnits[unitDefID] = true
+	end
+	if unitDef.customParams and unitDef.customParams.objectify then
+		objectifyUnitDefs[unitDefID] = true
 	end
 	if unitDef.canResurrect then
 		resurrectingUnits[unitDefID] = true
@@ -366,21 +372,23 @@ local function getCombatTargetData(unitDefID, targetID)
 		return
 	end
 	local targetDefID = spGetUnitDefID(targetID)
+	local targetIsVisible = isUnitInGaiaLos(targetID) and not spGetUnitIsBeingBuilt(targetID)
+	local shouldReclaim = capturingUnits[unitDefID] and objectifyUnitDefs[targetDefID] and targetIsVisible
 	local shouldCapture = capturingUnits[unitDefID]
+		and not objectifyUnitDefs[targetDefID]
 		and UnitDefs[targetDefID].capturable ~= false
-		and isUnitInGaiaLos(targetID)
-		and not spGetUnitIsBeingBuilt(targetID)
+		and targetIsVisible
 	local weaponRange = getWeaponRangeForTarget(unitDefID, targetID, targetY)
-	if shouldCapture or (weaponRange and weaponRange > 0) then
-		return targetX, targetZ, shouldCapture, weaponRange
+	if shouldReclaim or shouldCapture or (weaponRange and weaponRange > 0) then
+		return targetX, targetZ, shouldCapture, weaponRange, shouldReclaim
 	end
 end
 
 local function getNearestCombatTarget(unitID, unitDefID)
 	local nearestEnemyID = spGetUnitNearestEnemy(unitID, ENEMY_ATTACK_DISTANCE, true)
-	local targetX, targetZ, shouldCapture, weaponRange = getCombatTargetData(unitDefID, nearestEnemyID)
+	local targetX, targetZ, shouldCapture, weaponRange, shouldReclaim = getCombatTargetData(unitDefID, nearestEnemyID)
 	if targetX then
-		return nearestEnemyID, targetX, targetZ, shouldCapture, weaponRange
+		return nearestEnemyID, targetX, targetZ, shouldCapture, weaponRange, shouldReclaim
 	end
 
 	local unitX, _, unitZ = spGetUnitPosition(unitID)
@@ -393,10 +401,11 @@ local function getNearestCombatTarget(unitID, unitDefID)
 	local bestTargetZ
 	local bestShouldCapture
 	local bestWeaponRange
+	local bestShouldReclaim
 	local bestDistanceSquared
 	for enemyIndex = 1, #enemyUnits do
 		local enemyID = enemyUnits[enemyIndex]
-		targetX, targetZ, shouldCapture, weaponRange = getCombatTargetData(unitDefID, enemyID)
+		targetX, targetZ, shouldCapture, weaponRange, shouldReclaim = getCombatTargetData(unitDefID, enemyID)
 		if targetX then
 			local targetDistanceSquared = distance2dSquared(unitX, unitZ, targetX, targetZ)
 			if not bestDistanceSquared or targetDistanceSquared < bestDistanceSquared then
@@ -405,11 +414,12 @@ local function getNearestCombatTarget(unitID, unitDefID)
 				bestTargetZ = targetZ
 				bestShouldCapture = shouldCapture
 				bestWeaponRange = weaponRange
+				bestShouldReclaim = shouldReclaim
 				bestDistanceSquared = targetDistanceSquared
 			end
 		end
 	end
-	return bestTargetID, bestTargetX, bestTargetZ, bestShouldCapture, bestWeaponRange
+	return bestTargetID, bestTargetX, bestTargetZ, bestShouldCapture, bestWeaponRange, bestShouldReclaim
 end
 
 local function clampToMap(position, mapSize)
@@ -887,14 +897,14 @@ local function updateOrders(unitID, unitDefID)
 		local currentCommand = spGetUnitCurrentCommand(unitID)
 		local movementCommand = getMovementCommand(unitDefID)
 		if
-			currentCommand == CMD_CAPTURE -- capture needs LOS, so drop the order if Gaia loses sight
+			(currentCommand == CMD_CAPTURE or currentCommand == CMD_RECLAIM) -- capture and reclaim need LOS, so drop the order if Gaia loses sight
 			and previousCombatTargetID
 			and not isUnitInGaiaLos(previousCombatTargetID)
 		then
 			zombieData.combatTargetID = nil
 			clearUnitOrders(unitID)
 		end
-		local targetX, targetZ, shouldCapture, weaponRange =
+		local targetX, targetZ, shouldCapture, weaponRange, shouldReclaim =
 			getCombatTargetData(unitDefID, zombieData.combatTargetID)
 		if not targetX then
 			zombieData.combatTargetID = nil
@@ -904,18 +914,23 @@ local function updateOrders(unitID, unitDefID)
 			retargetsEveryTick
 			or (not zombieData.combatTargetID and (capturingUnits[unitDefID] or unitDefWeaponRanges[unitDefID]))
 		then
-			local closestKnownEnemy, nearestX, nearestZ, nearestShouldCapture, nearestWeaponRange =
+			local closestKnownEnemy, nearestX, nearestZ, nearestShouldCapture, nearestWeaponRange, nearestShouldReclaim =
 				getNearestCombatTarget(unitID, unitDefID)
 			if nearestX then
 				zombieData.combatTargetID = closestKnownEnemy
-				targetX, targetZ, shouldCapture, weaponRange =
-					nearestX, nearestZ, nearestShouldCapture, nearestWeaponRange
+				targetX, targetZ, shouldCapture, weaponRange, shouldReclaim =
+					nearestX, nearestZ, nearestShouldCapture, nearestWeaponRange, nearestShouldReclaim
 				rememberEnemyDirection(unitID, zombieData, targetX, targetZ)
 			end
 		end
 
 		if zombieData.combatTargetID then
-			if shouldCapture then
+			if shouldReclaim then
+				if currentCommand ~= CMD_RECLAIM or previousCombatTargetID ~= zombieData.combatTargetID then
+					clearLastCombatTarget(zombieData)
+					spGiveOrderToUnit(unitID, CMD_RECLAIM, { zombieData.combatTargetID }, 0)
+				end
+			elseif shouldCapture then
 				if currentCommand ~= CMD_CAPTURE or previousCombatTargetID ~= zombieData.combatTargetID then
 					clearLastCombatTarget(zombieData)
 					spGiveOrderToUnit(unitID, CMD_CAPTURE, { zombieData.combatTargetID }, 0)
@@ -1188,11 +1203,13 @@ local function updateStuckZombies()
 		local movedDistanceSquared = distance2dSquared(unitX, unitZ, zombieData.lastX, zombieData.lastZ)
 		local isAtRememberedObjective = objectiveIsRememberedEdge(zombieData, objective)
 			and isObjectiveReached(unitID, objective, unitX, unitZ)
+		local workerTask = spGetUnitWorkerTask(unitID)
 		if
 			mobileUnitDefs[unitDefID] -- if they haven't moved, blacklist this spot and reroute; keep a remembered-enemy goal
 			and not isAtRememberedObjective
 			and movedDistanceSquared < STUCK_DISTANCE_SQUARED
-			and spGetUnitWorkerTask(unitID) ~= CMD_RESURRECT
+			and workerTask ~= CMD_RESURRECT
+			and workerTask ~= CMD_RECLAIM
 		then
 			clearUnitOrders(unitID)
 			clearCombatTracking(zombieData)
@@ -1239,6 +1256,7 @@ local function commandGhost(unitID, unitDefID, ghostX, ghostY, ghostZ)
 	)
 	local fled = false
 	local enemyWithinRadius = false
+	local issueMoveOrder = gameFrame % GHOST_MOVE_ORDER_INTERVAL == 0
 	if nearestEnemyID then
 		local enemyX, _, enemyZ = spGetUnitPosition(nearestEnemyID)
 		if enemyX then
@@ -1246,7 +1264,7 @@ local function commandGhost(unitID, unitDefID, ghostX, ghostY, ghostZ)
 			local differenceZ = ghostZ - enemyZ
 			local enemyDistanceSquared = differenceX * differenceX + differenceZ * differenceZ
 			enemyWithinRadius = enemyDistanceSquared <= GHOST_ENEMY_RADIUS_SQUARED
-			if enemyDistanceSquared > 0 then
+			if issueMoveOrder and enemyDistanceSquared > 0 then
 				local enemyDistance = sqrt(enemyDistanceSquared)
 				fled = giveGhostMoveOrder(
 					unitID,
@@ -1257,7 +1275,7 @@ local function commandGhost(unitID, unitDefID, ghostX, ghostY, ghostZ)
 			end
 		end
 	end
-	if not fled then
+	if issueMoveOrder and not fled then
 		giveGhostMoveOrder(
 			unitID,
 			unitDefID,

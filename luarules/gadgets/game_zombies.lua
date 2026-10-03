@@ -40,6 +40,7 @@ local PUBLIC_RULES_PARAM_ACCESS = { public = true }
 local WAS_ZOMBIE_TIMEOUT_FRAMES = Game.gameSpeed * 3
 local FACTORY_BUILDPOWER_TECH_BASE = 1.7
 local GHOST_SAFE_TIME = Game.gameSpeed * 20
+local GHOST_MINIMUM_LIFE = Game.gameSpeed * 30
 local GHOST_EXPIRATION_TIME = Game.gameSpeed * 120
 local GHOST_MAP_MARGIN = 16
 local GHOST_SPAWN_ATTEMPT_COUNT = 3
@@ -823,9 +824,41 @@ local function forgetGhost(unitID)
 	ghostCount = ghostCount - 1
 end
 
+local function removeGhost(unitID)
+	forgetGhost(unitID)
+	spring.DestroyUnit(unitID, false, true)
+end
+
+local function getOldestReplaceableGhostID()
+	local oldestUnitID
+	local oldestCreationFrame
+	for unitID, ghostData in pairs(ghosts) do
+		local creationFrame = ghostData.creationFrame
+		if gameFrame - creationFrame >= GHOST_MINIMUM_LIFE then
+			if
+				not oldestCreationFrame
+				or creationFrame < oldestCreationFrame
+				or (creationFrame == oldestCreationFrame and unitID < oldestUnitID)
+			then
+				oldestUnitID = unitID
+				oldestCreationFrame = creationFrame
+			end
+		end
+	end
+	return oldestUnitID
+end
+
 local function createGhost(spawnX, spawnZ)
 	if not ghostMistUnitDefID then
 		return nil
+	end
+
+	local replacedGhostID
+	if ghostCount >= MAX_GHOSTS then
+		replacedGhostID = getOldestReplaceableGhostID()
+		if not replacedGhostID then
+			return nil
+		end
 	end
 
 	local ghostX = clamp(spawnX, GHOST_MAP_MARGIN, Game.mapSizeX - GHOST_MAP_MARGIN)
@@ -833,6 +866,10 @@ local function createGhost(spawnX, spawnZ)
 	local unitID = spring.CreateUnit(ghostMistUnitDefID, ghostX, spGetGroundHeight(ghostX, ghostZ), ghostZ, 0, gaiaTeamID)
 	if not unitID then
 		return nil
+	end
+
+	if replacedGhostID then
+		removeGhost(replacedGhostID)
 	end
 
 	spring.SetUnitNeutral(unitID, true)
@@ -845,6 +882,7 @@ local function createGhost(spawnX, spawnZ)
 	end
 
 	ghosts[unitID] = {
+		creationFrame = gameFrame,
 		readyFrame = gameFrame + GHOST_SAFE_TIME,
 		expirationFrame = gameFrame + GHOST_EXPIRATION_TIME,
 	}
@@ -853,7 +891,7 @@ local function createGhost(spawnX, spawnZ)
 end
 
 local function spawnRandomMapGhost()
-	if not autoSpawningEnabled or ghostCount >= MAX_GHOSTS then
+	if not autoSpawningEnabled then
 		return
 	end
 
@@ -876,9 +914,7 @@ end
 
 dispatchGhostDeath = function(unitDefID, spawnX, spawnZ)
 	enqueueGhostSpawns(buildGhostSpawnUnitDefIDs(unitDefID))
-	if ghostCount < MAX_GHOSTS then
-		createGhost(spawnX, spawnZ)
-	end
+	createGhost(spawnX, spawnZ)
 end
 
 scheduleGhostDeath = function(unitDefID, spawnX, spawnZ, delayFrames, sourceID)
@@ -892,11 +928,6 @@ scheduleGhostDeath = function(unitDefID, spawnX, spawnZ, delayFrames, sourceID)
 		return
 	end
 	dispatchGhostDeath(unitDefID, spawnX, spawnZ)
-end
-
-local function removeGhost(unitID)
-	forgetGhost(unitID)
-	spring.DestroyUnit(unitID, false, true)
 end
 
 local function collectReadyGhostIDs()
