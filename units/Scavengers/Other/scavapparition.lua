@@ -25,7 +25,7 @@ return {
 		kamikazedistance = 50,
 		mass = 1000,
 		health = 500,
-		speed = 120.0,
+		speed = 60.0,
 		maxwaterdepth = 0,
 		movementclass = "HHOVER4",
 		nochasecategory = "ALL",
