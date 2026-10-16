@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<rml>
+	<head id="head">
+		<title>Announcement Banners</title>
+		<link type="text/rcss" href="gui_announcement_banners.rcss" />
+	</head>
+	<body data-model="announcement_banners_model">
+		<div class="announcement-banner" data-if="isVisible">
+			<div class="announcement-banner-content">
+				<div class="announcement-banner-title">{{title}}</div>
+				<div class="announcement-banner-line" data-for="line : lines">{{line.text}}</div>
+			</div>
+		</div>
+	</body>
+</rml>

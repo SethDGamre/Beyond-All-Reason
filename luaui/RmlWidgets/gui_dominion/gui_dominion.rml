@@ -227,13 +227,5 @@
 				</div>
 			</div>
 		</div>
-
-		<div class="dominion-popup" data-if="popupVisible">
-			<div class="dominion-popup-content">
-				<div class="dominion-popup-title">{{popupTitle}}</div>
-				<div class="dominion-popup-rate" data-if="popupRateText != ''">{{popupRateText}}</div>
-				<div class="dominion-popup-deadline" data-if="popupDeadlineText != ''">{{popupDeadlineText}}</div>
-			</div>
-		</div>
 	</body>
 </rml>

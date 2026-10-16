@@ -103,7 +103,6 @@ local DEFAULT_COLOR = {
 local DEADLINE_ICON_COLOR = "rgba(255, 48, 48, 255)"
 
 local DATA_UPDATE_INTERVAL = 1.0
-local POPUP_DURATION_SECONDS = 5
 local POPUP_INITIAL_WINDOW_SECONDS = 10
 local DANGER_POPUP_COOLDOWN_SECONDS = 60
 local SECONDS_PER_MINUTE = 60
@@ -163,8 +162,6 @@ local widgetState = {
 	tooltipActive = false,
 	tooltipRowCount = 1,
 	tooltipWidthDp = TOOLTIP.MIN_WIDTH_DP,
-	popupActive = false,
-	popupStartClock = 0.0,
 	hasObservedDeadline = false,
 	lastObservedDeadline = 0,
 	allyTeamColorByID = {},
@@ -1441,10 +1438,6 @@ end
 ---@field dangerMarkTooltip string
 ---@field deadlineLineTooltip string
 ---@field deadlineLineSecondaryTooltip string
----@field popupVisible boolean
----@field popupTitle string
----@field popupRateText string
----@field popupDeadlineText string
 ---@field beginPanelDrag fun(event: any)
 ---@field blockPanelDrag fun(event: any)
 ---@field toggleExpanded fun(event: any)
@@ -1528,10 +1521,6 @@ local function initializeModel()
 		deadlineLineSecondaryTooltip = I18N("ui.dominion.tooltip.deadlineScoreRule", {
 			percentage = DEADLINE_SCORE_PERCENT_LABEL,
 		}),
-		popupVisible = false,
-		popupTitle = "",
-		popupRateText = "",
-		popupDeadlineText = "",
 		beginPanelDrag = beginPanelDrag,
 		blockPanelDrag = stopEventPropagation,
 		toggleExpanded = toggleExpanded,
@@ -1563,14 +1552,10 @@ local function synchronizeVisibility()
 	end
 
 	local shouldShow = getShouldShow()
-	local popupVisible = widgetState.popupActive and shouldShow
 	local tooltipVisible = widgetState.tooltipActive and shouldShow
 	widgetState.shouldShow = shouldShow
 	if dataModel.isVisible ~= shouldShow then
 		dataModel.isVisible = shouldShow
-	end
-	if dataModel.popupVisible ~= popupVisible then
-		dataModel.popupVisible = popupVisible
 	end
 
 	if not shouldShow then
@@ -1579,13 +1564,6 @@ local function synchronizeVisibility()
 	end
 	if dataModel.tooltipVisible ~= tooltipVisible then
 		dataModel.tooltipVisible = tooltipVisible
-	end
-end
-
-local function hidePopup()
-	widgetState.popupActive = false
-	if widgetState.dataModel and widgetState.dataModel.popupVisible then
-		widgetState.dataModel.popupVisible = false
 	end
 end
 
@@ -1613,24 +1591,24 @@ local function getFinalPopupTitle(allyTeams, livingLeader)
 	return I18N("ui.dominion.deadlinePopup.defeat")
 end
 
+local function isAnnouncementBannerActive()
+	local announcementBanners = WG.announcementBanners
+	if not announcementBanners or not announcementBanners.isActive then
+		return false
+	end
+	return announcementBanners.isActive()
+end
+
 local function showPopup(title, rateText, deadlineText)
-	local dataModel = widgetState.dataModel
-	if not dataModel then
+	local announcementBanners = WG.announcementBanners
+	if not announcementBanners or not announcementBanners.announce then
 		return
 	end
-
-	dataModel.popupTitle = title
-	dataModel.popupRateText = rateText or ""
-	dataModel.popupDeadlineText = deadlineText or ""
-	widgetState.popupActive = true
-	widgetState.popupStartClock = os.clock()
-	local shouldShow = getShouldShow()
-	dataModel.popupVisible = shouldShow
-
-	if shouldShow then
-		Spring.PlaySoundFile("sounds/global-events/scavlootdrop.wav", 0.8, "ui")
-		Spring.PlaySoundFile("sounds/replies/servlrg3.wav", 1, "ui")
-	end
+	announcementBanners.announce({
+		title = title,
+		subtitle = rateText,
+		detail = deadlineText,
+	})
 end
 
 local function showDeadlinePopup(currentDeadline, maxDeadlines, deadlineScore, allyTeams, livingLeader)
@@ -1739,7 +1717,7 @@ local function updateDangerPopup(hasDeadline, deadlineScore, currentDeadline, ma
 			if WG.notifications and WG.notifications.addEvent then
 				WG.notifications.addEvent("Dominion/EliminationDanger", false)
 			end
-			if not widgetState.popupActive then
+			if not isAnnouncementBannerActive() then
 				local deadlineText = ""
 				if hasDeadline then
 					deadlineText = I18N(
@@ -1983,7 +1961,6 @@ end
 
 function widget:Shutdown()
 	finishPanelDrag()
-	hidePopup()
 
 	if widgetState.document then
 		widgetState.document:Close()
@@ -2004,7 +1981,6 @@ function widget:Update(deltaTime)
 	positionTooltip()
 	updateCountdownPulse()
 
-	local currentClock = os.clock()
 	widgetState.updateAccumulator = widgetState.updateAccumulator + (tonumber(deltaTime) or 0)
 
 	if widgetState.updateAccumulator >= DATA_UPDATE_INTERVAL then
@@ -2015,10 +1991,6 @@ function widget:Update(deltaTime)
 			positionPanelAtOrigin()
 		end
 		updateCountdownPulse()
-	end
-
-	if widgetState.popupActive and currentClock - widgetState.popupStartClock >= POPUP_DURATION_SECONDS then
-		hidePopup()
 	end
 
 	applyExpandedScroll()
@@ -2033,7 +2005,6 @@ function widget:RecvLuaMsg(message, playerID)
 		widgetState.hiddenByLobby = false
 	elseif message:sub(1, 19) == "LobbyOverlayActive1" then
 		widgetState.hiddenByLobby = true
-		hidePopup()
 	end
 	synchronizeVisibility()
 end
