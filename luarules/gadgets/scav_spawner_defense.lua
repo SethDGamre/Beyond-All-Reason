@@ -2335,7 +2335,6 @@ if gadgetHandler:IsSyncedCode() then
 			if
 				config.scavBehaviours.SKIRMISH[attackerDefID]
 				and (unitTeam ~= scavTeamID)
-				and (attackerTeam == scavTeamID)
 				and attackerID
 				and (mRandom() < config.scavBehaviours.SKIRMISH[attackerDefID].chance)
 				and unitTeam ~= attackerTeam
@@ -2443,7 +2442,6 @@ if gadgetHandler:IsSyncedCode() then
 			elseif
 				config.scavBehaviours.BERSERK[attackerDefID]
 				and (unitTeam ~= scavTeamID)
-				and (attackerTeam == scavTeamID)
 				and attackerID
 				and (mRandom() < config.scavBehaviours.BERSERK[attackerDefID].chance)
 				and unitTeam ~= attackerTeam
@@ -3070,13 +3068,6 @@ if gadgetHandler:IsSyncedCode() then
 				unitSquadTable[unitID] = nil
 			end
 			capturableUnits[unitID] = true
-			unitCowardCooldown[unitID] = nil
-			if not UnitDefs[unitDefID].canMove then
-				squadPotentialTarget:Add(unitID)
-				if config.highValueTargets[unitDefID] then
-					squadPotentialHighValueTarget:Add(unitID)
-				end
-			end
 		end
 
 		if newTeam == scavTeamID then

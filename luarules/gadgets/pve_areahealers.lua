@@ -81,7 +81,7 @@ for unitDefID, unitDef in pairs(UnitDefs) do
 	unitBuildtime[unitDefID] = unitDef.buildTime
 end
 
-local function trackUnit(unitID, unitDefID, unitTeam)
+function gadget:UnitCreated(unitID, unitDefID, unitTeam)
 	if healersTable[unitDefID] and (unitTeam == pveTeamID) then
 		aliveHealers[unitID] = {
 			teamID = unitTeam,
@@ -89,18 +89,8 @@ local function trackUnit(unitID, unitDefID, unitTeam)
 			healingrange = healersTable[unitDefID].healingrange,
 			canbehealed = healersTable[unitDefID].canbehealed,
 		}
-	else
-		aliveHealers[unitID] = nil
 	end
 	unitTeams[unitID] = unitTeam
-end
-
-function gadget:UnitCreated(unitID, unitDefID, unitTeam)
-	trackUnit(unitID, unitDefID, unitTeam)
-end
-
-function gadget:UnitGiven(unitID, unitDefID, newTeam, oldTeam)
-	trackUnit(unitID, unitDefID, newTeam)
 end
 
 function gadget:UnitDestroyed(unitID, unitDefID, unitTeam, attackerID)
